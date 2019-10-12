@@ -1,4 +1,10 @@
-server: server.o
-server.o: server.c
+objects = server.o report.o
+initport = 10020
+server: $(objects)
+server.o: server.c server.h
+report.o: report.c server.h
 clean:
-	rm server server.o
+	rm server $(objects)
+start $(initport):
+	make
+	./server -port $(initport)
