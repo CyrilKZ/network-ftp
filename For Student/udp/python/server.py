@@ -1,4 +1,5 @@
 import socket
+import time
 
 size = 8192
 
