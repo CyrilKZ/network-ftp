@@ -16,23 +16,23 @@ int run(int argc, char **argv)
 	int len;
 	int p;
 
-	//´´½¨socket
+	//ï¿½ï¿½ï¿½ï¿½socket
 	if ((sockfd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP)) == -1)
 	{
 		printf("Error socket(): %s(%d)\n", strerror(errno), errno);
 		return 1;
 	}
 
-	//ÉèÖÃÄ¿±êÖ÷»úµÄipºÍport
+	//ï¿½ï¿½ï¿½ï¿½Ä¿ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ipï¿½ï¿½port
 	memset(&addr, 0, sizeof(addr));
 	addr.sin_family = AF_INET;
 	addr.sin_port = 10020;
 	if (inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr) <= 0)
-	{ //×ª»»ipµØÖ·:µã·ÖÊ®½øÖÆ-->¶þ½øÖÆ
+	{ //×ªï¿½ï¿½ipï¿½ï¿½Ö·:ï¿½ï¿½ï¿½Ê®ï¿½ï¿½ï¿½ï¿½-->ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 		printf("Error inet_pton(): %s(%d)\n", strerror(errno), errno);
 		return 1;
 	}
-	//Á¬½ÓÉÏÄ¿±êÖ÷»ú£¨½«socketºÍÄ¿±êÖ÷»úÁ¬½Ó£©-- ×èÈûº¯Êý
+	//ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ä¿ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½socketï¿½ï¿½Ä¿ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ó£ï¿½-- ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 	if (connect(sockfd, (struct sockaddr *)&addr, sizeof(addr)) < 0)
 	{
 		printf("Error connect(): %s(%d)\n", strerror(errno), errno);
@@ -40,7 +40,7 @@ int run(int argc, char **argv)
 	}
 	while (1)
 	{
-		//»ñÈ¡¼üÅÌÊäÈë
+		//ï¿½ï¿½È¡ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 		memset(sentence, 0, 4096);
 		fgets(sentence, 4096, stdin);
 		len = strlen(sentence);
@@ -55,7 +55,7 @@ int run(int argc, char **argv)
 			sentence[0] = '\n';
 			sentence[1] = '\0';
 			len = 1;
-			int n = write(sockfd, sentence, len); //writeº¯Êý²»±£Ö¤ËùÓÐµÄÊý¾ÝÐ´Íê£¬¿ÉÄÜÖÐÍ¾ÍË³ö
+			int n = write(sockfd, sentence, len); //writeï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ö¤ï¿½ï¿½ï¿½Ðµï¿½ï¿½ï¿½ï¿½ï¿½Ð´ï¿½ê£¬ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Í¾ï¿½Ë³ï¿½
 			if (n < 0)
 			{
 				printf("Error write(): %s(%d)\n", strerror(errno), errno);
@@ -65,11 +65,11 @@ int run(int argc, char **argv)
 			printf("Quiting\n");
 			break;
 		}
-		//°Ñ¼üÅÌÊäÈëÐ´Èësocket
+		//ï¿½Ñ¼ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ð´ï¿½ï¿½socket
 		p = 0;
 		while (p < len)
 		{
-			int n = write(sockfd, sentence + p, len + 1 - p); //writeº¯Êý²»±£Ö¤ËùÓÐµÄÊý¾ÝÐ´Íê£¬¿ÉÄÜÖÐÍ¾ÍË³ö
+			int n = write(sockfd, sentence + p, len + 1 - p); //writeï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ö¤ï¿½ï¿½ï¿½Ðµï¿½ï¿½ï¿½ï¿½ï¿½Ð´ï¿½ê£¬ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Í¾ï¿½Ë³ï¿½
 			if (n < 0)
 			{
 				printf("Error write(): %s(%d)\n", strerror(errno), errno);
@@ -83,14 +83,14 @@ int run(int argc, char **argv)
 		}
 		printf("Send message: %s\n", sentence);
 	}
-	//Õ¥¸Ésocket½ÓÊÕµ½µÄÄÚÈÝ
+	//Õ¥ï¿½ï¿½socketï¿½ï¿½ï¿½Õµï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 	p = 0;
 	while (1)
 	{
 		int n = read(sockfd, sentence + p, 8191 - p);
 		if (n < 0)
 		{
-			printf("Error read(): %s(%d)\n", strerror(errno), errno); //read²»±£Ö¤Ò»´Î¶ÁÍê£¬¿ÉÄÜÖÐÍ¾ÍË³ö
+			printf("Error read(): %s(%d)\n", strerror(errno), errno); //readï¿½ï¿½ï¿½ï¿½Ö¤Ò»ï¿½Î¶ï¿½ï¿½ê£¬ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Í¾ï¿½Ë³ï¿½
 			printf("Error2\n");
 			return 1;
 		}
@@ -113,7 +113,7 @@ int run(int argc, char **argv)
 		}
 	}
 
-	//×¢Òâ£ºread²¢²»»á½«×Ö·û´®¼ÓÉÏ'\0'£¬ÐèÒªÊÖ¶¯Ìí¼Ó
+	//×¢ï¿½â£ºreadï¿½ï¿½ï¿½ï¿½ï¿½á½«ï¿½Ö·ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½'\0'ï¿½ï¿½ï¿½ï¿½Òªï¿½Ö¶ï¿½ï¿½ï¿½ï¿½ï¿½
 	sentence[p - 1] = '\0';
 	printf("Received message: %s\n", sentence);
 	close(sockfd);

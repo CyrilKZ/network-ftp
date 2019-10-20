@@ -1,38 +1,26 @@
-#include <sys/socket.h>
-#include <sys/stat.h>
-#include <netinet/in.h>
-
-#include <unistd.h>
-#include <errno.h>
-
-#include <ctype.h>
-#include <string.h>
-#include <memory.h>
-#include <stdio.h>
-#include <stdlib.h>
 #include "server.h"
 
 char rootDirectory[512] = "";
 int portNum = 21;
 
-void errorOut(char *err)
+void error_out(char *err)
 {
 	printf("%s", err);
 	exit(1);
 }
 
-void getParams(int argc, char **argv)
+void get_params(int argc, char **argv)
 {
 	char errMsg[40] = "Error: Invalid initial parameters\n";
 	char cwd[255];
 	char temp[256] = "tmp";
 	if (getcwd(cwd, sizeof(cwd)) == NULL)
 	{
-		errorOut("Error: Work directory invalid\n");
+		error_out("Error: Work directory invalid\n");
 	}
 	if (argc != 1 && argc != 3 && argc != 5)
 	{
-		errorOut(errMsg);
+		error_out(errMsg);
 	}
 	if (argc == 3)
 	{
@@ -45,12 +33,12 @@ void getParams(int argc, char **argv)
 			portNum = atoi(argv[2]);
 			if (portNum <= 0)
 			{
-				errorOut(errMsg);
+				error_out(errMsg);
 			}
 		}
 		else
 		{
-			errorOut(errMsg);
+			error_out(errMsg);
 		}
 	}
 	if (argc == 5)
@@ -63,12 +51,12 @@ void getParams(int argc, char **argv)
 				portNum = atoi(argv[4]);
 				if (portNum <= 0)
 				{
-					errorOut(errMsg);
+					error_out(errMsg);
 				}
 			}
 			else
 			{
-				errorOut(errMsg);
+				error_out(errMsg);
 			}
 		}
 		else if (strcmp("-port", argv[1]) == 0)
@@ -76,7 +64,7 @@ void getParams(int argc, char **argv)
 			portNum = atoi(argv[2]);
 			if (portNum <= 0)
 			{
-				errorOut(errMsg);
+				error_out(errMsg);
 			}
 			if (strcmp("-root", argv[3]) == 0)
 			{
@@ -84,12 +72,12 @@ void getParams(int argc, char **argv)
 			}
 			else
 			{
-				errorOut(errMsg);
+				error_out(errMsg);
 			}
 		}
 		else
 		{
-			errorOut(errMsg);
+			error_out(errMsg);
 		}
 	}
 	strncpy(rootDirectory, cwd, 255);
@@ -99,14 +87,115 @@ void getParams(int argc, char **argv)
 	{
 		if (mkdir(rootDirectory, 0777) == -1)
 		{
-			errorOut("Error: Could not access root\n");
+			error_out("Error: Could not access root\n");
 		}
 	}
+	if(chroot(rootDirectory) == -1)
+	{
+		error_out("Error: Could not set root\n");
+	}
+}
+
+IpAddr ip_of(int sock)
+{
+  struct sockaddr_in addrIn;
+  socklen_t size = sizeof(addrIn);
+  getsockname(sock, (struct sockaddr*)&addrIn, &size);
+  int h = addrIn.sin_addr.s_addr;
+  IpAddr ip;
+  ip.h1 = h & 0xff;
+  h >> 1;
+  ip.h2 = h & 0xff;
+  h >> 1;
+  ip.h3 = h & 0xff;
+  h >> 1;
+  ip.h4 = h & 0xff;
+  return ip;
+}
+
+SockPort random_port()
+{
+  SockPort res;
+  srand(time(NULL));
+  res.p1 = (rand()%64) + 128;
+  res.p2 = rand()%256;
+  return res;
+}
+
+int init_socket_atport(int port)
+{
+	struct sockaddr_in addr;
+	memset(&addr, 0, sizeof(addr));
+	addr.sin_family = AF_INET;
+	addr.sin_port = htons(port);
+	addr.sin_addr.s_addr = htonl(INADDR_ANY);
+	int sock;
+	if((sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP)) == -1)
+	{
+		printf("Error socket(): %s(%d)\n", strerror(errno), errno);
+		return -1;
+	}
+	if(bind(sock, (struct sockaddr *)&addr, sizeof(addr)) == -1)
+	{
+		printf("Error bind(): %s(%d)\n", strerror(errno), errno);
+		return -1;
+	}
+	if (listen(sock, 10) == -1)
+	{
+		printf("Error listen(): %s(%d)\n", strerror(errno), errno);
+		return -1;
+	}
+	return sock;
+}
+
+int init_connection_at(int port, IpAddr ip)
+{
+	struct sockaddr_in addr;
+	memset(&addr, 0, sizeof(addr));
+	addr.sin_family = AF_INET;
+	addr.sin_port = htons(port);
+	char buffer[256] = {0};
+	sprintf(buffer, "%d.%d.%d.%d", ip.h1, ip.h2, ip.h3, ip.h4);
+	if(inet_pton(AF_INET, buffer, &addr.sin_addr) <= 0)
+	{
+		printf("Error inet_pton(): %s(%d)\n", strerror(errno), errno);
+		return -1;
+	}
+	int sock;
+	if((sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP)) == -1)
+	{
+		printf("Error socket(): %s(%d)\n", strerror(errno), errno);
+		return -1;
+	}
+	if(connect(sock, (struct sockaddr *)&addr, sizeof(addr)) < 0)
+	{
+		printf("Error connect(): %s(%d)\n", strerror(errno), errno);
+		return -1;
+	}
+	return sock;
+}
+
+int accept_connection(int socket)
+{
+	struct sockaddr_in clientAddr;
+	int size = sizeof(clientAddr);
+	return accept(socket, (struct sockaddr*)&clientAddr, &size);
+}
+
+int translate_todir(char* buffer, char*filename, Session* ssn)
+{
+	if(strlen(ssn->currentDir) > 1024 || strlen(filename) > 1024)
+	{
+		return -1;
+	}
+	strcpy(buffer, ssn->currentDir);
+	strcat(buffer, filename);
+	return 1;
 }
 
 int main(int argc, char **argv)
 {
-	getParams(argc, argv);
+	get_params(argc, argv);
 
 	int listenfd, connfd; //监听socket和连接socket不一样，后者用于数据传输
 	struct sockaddr_in addr;
@@ -114,30 +203,9 @@ int main(int argc, char **argv)
 	int p;
 	int len;
 
-	//创建socket
-	if ((listenfd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP)) == -1)
+	listenfd = init_socket_atport(portNum);
+	if(listenfd == -1)
 	{
-		printf("Error socket(): %s(%d)\n", strerror(errno), errno);
-		return 1;
-	}
-
-	//设置本机的ip和port
-	memset(&addr, 0, sizeof(addr));
-	addr.sin_family = AF_INET;
-	addr.sin_port = portNum;
-	addr.sin_addr.s_addr = htonl(INADDR_ANY); //监听"0.0.0.0"
-
-	//将本机的ip和port与socket绑定
-	if (bind(listenfd, (struct sockaddr *)&addr, sizeof(addr)) == -1)
-	{
-		printf("Error bind(): %s(%d)\n", strerror(errno), errno);
-		return 1;
-	}
-
-	//开始监听socket
-	if (listen(listenfd, 10) == -1)
-	{
-		printf("Error listen(): %s(%d)\n", strerror(errno), errno);
 		return 1;
 	}
 
