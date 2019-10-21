@@ -94,6 +94,10 @@ void get_params(int argc, char **argv)
 	{
 		error_out("Error: Could not set root\n");
 	}
+	if(chdir("/") == -1)
+	{
+		error_out("Error: Could not set root\n");
+	}
 }
 
 IpAddr ip_of(int sock)
@@ -182,24 +186,68 @@ int accept_connection(int socket)
 	return accept(socket, (struct sockaddr*)&clientAddr, &size);
 }
 
-int translate_todir(char* buffer, char*filename, Session* ssn)
+// int translate_todir(char* buffer, char*filename, Session* ssn)
+// {
+// 	if(strlen(ssn->currentDir) > 1024 || strlen(filename) > 1024)
+// 	{
+// 		return -1;
+// 	}
+// 	strcpy(buffer, ssn->currentDir);
+// 	strcat(buffer, filename);
+// 	return 1;
+// }
+void server_wait(int signum)
 {
-	if(strlen(ssn->currentDir) > 1024 || strlen(filename) > 1024)
+  int status;
+  wait(&status);
+}
+
+void communicate(int fd)
+{
+	char buffer[2048] = {0};
+	Command cmd = new_command();
+	Session ssn = new_session(fd);
+	ssn.msgToClient = "220 Welcome to this FTP server, please login with USER command.\n";
+	message_client(&ssn);
+	int nread = 0;
+	while(nread = read(fd, buffer, 4096))
 	{
-		return -1;
+		if(nread < 0 || nread > 4096)
+		{
+			printf("Error read() at communicate.\n");
+			continue;
+		}
+		buffer[2047] = '\0';
+		
+		if(strlen(buffer) > 1024 + 6)
+		{
+			ssn.msgToClient = "500 Argument too long.\n";
+			message_client(&ssn);
+			continue;
+		}
+		stringfy_commandline(buffer);
+		if(buffer[0] > 127 || buffer[0] <= 0)
+		{
+			ssn.msgToClient = "500 Invalid command.\n";
+			message_client(&ssn);
+			continue;
+		}
+		parse_command(buffer, &cmd);
+		printf("Message Received: CMD=<%s> ARG=<%s>\n", cmd.title, cmd.arg);
+		handle_command(&cmd, &ssn);
+		memset(&cmd, 0, sizeof(Command));
+		memset(buffer, 0, sizeof(buffer));
 	}
-	strcpy(buffer, ssn->currentDir);
-	strcat(buffer, filename);
-	return 1;
+	printf("Client disconnected\n");
 }
 
 int main(int argc, char **argv)
 {
 	get_params(argc, argv);
 
-	int listenfd, connfd; //监听socket和连接socket不一样，后者用于数据传输
+	int listenfd, connfd;
 	struct sockaddr_in addr;
-	char sentence[8192];
+	char sentence[8192] = {0};
 	int p;
 	int len;
 
@@ -209,80 +257,44 @@ int main(int argc, char **argv)
 		return 1;
 	}
 
+	getcwd(sentence, 2048);
 	printf("Server running ...\n");
 	printf("File root directory:\t%s\n", rootDirectory);
+	printf("Cuurent directory:\t%s\n", sentence);
 	printf("Listening port: \t%d\n", portNum);
-
-	//持续监听连接请求
 	while (1)
 	{
 		memset(sentence, 0, 8192);
-		//等待client的连接 -- 阻塞函数
 		if ((connfd = accept(listenfd, NULL, NULL)) == -1)
 		{
 			printf("Error accept(): %s(%d)\n", strerror(errno), errno);
 			continue;
 		}	
-		p = 0;
-		while (1)
-		{
-			//榨干socket传来的内容
-			int n = read(connfd, sentence + p, 8191 - p);
-			if (n < 0)
-			{
-				printf("Error read(): %s(%d)\n", strerror(errno), errno);
-				close(connfd);
-				continue;
-			}
-			else if (n == 0)
-			{
-				printf("Message Ended\n");
-				break;
-			}
-			else
-			{
-				p += n;
-				if (sentence[p - 1] == '\0')
-				{
-					printf("Segment Received\n");
-					--p;
-				}
-				if (sentence[p - 1] == '\n')
-				{
-					printf("Message Ended\n");
-					break;
-				}
-			}
-		}
-		//socket接收到的字符串并不会添加'\0'
-		sentence[p] = '\0';
-		len = p;
 
-		printf("Received message: %s\n", sentence);
+		int pid = fork();
 
-		//字符串处理
-		for (p = 0; p < len; p++)
+		if(pid < 0)
 		{
-			sentence[p] = toupper(sentence[p]);
+			char* res = "425 Cannot create Process for connection.\n";
+			write(connfd, res, strlen(res));
+			printf("Error fork(): cannot open new process.\n");
+			continue;
 		}
 
-		//发送字符串到socket
-		p = 0;
-		while (p < len)
+		if(pid == 0)
 		{
-			int n = write(connfd, sentence + p, len + 1 - p);
-			if (n < 0)
-			{
-				printf("Error write(): %s(%d)\n", strerror(errno), errno);
-				return 1;
-			}
-			else
-			{
-				p += n;
-			}
+			signal(SIGCHLD, server_wait);
+			printf("Connected\n");
+			//close(listenfd);
+			communicate(connfd);
+			connfd = sclose_sock(connfd);
+			exit(0);
 		}
-		printf("Send message: %s\n", sentence);
-		close(connfd);
+		else
+		{
+			connfd = sclose_sock(connfd);
+		}
 	}
 	close(listenfd);
 }
+

@@ -1,15 +1,23 @@
 #include <sys/socket.h>
 #include <sys/stat.h>
+#include <sys/sendfile.h>
+#include <sys/wait.h>
 #include <netinet/in.h>
 
+#include <arpa/inet.h>
 #include <unistd.h>
 #include <errno.h>
+#include <time.h>
 
+#include <signal.h>
+#include <fcntl.h>
 #include <ctype.h>
 #include <string.h>
 #include <memory.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <pwd.h>
+#include <dirent.h>
 
 #define ARG_SIZE 1024
 #define CONNECTED 0
@@ -40,6 +48,7 @@ typedef struct comand
   char title[5];
   char arg[ARG_SIZE];
 } Command;
+Command new_command();
 
 typedef struct session
 {
@@ -54,7 +63,6 @@ typedef struct session
 
   //data connection
   int datafd;
-  int datapid;
 
   int rcvMode;
 
@@ -65,17 +73,14 @@ typedef struct session
   IpAddr rcvAddr;
   SockPort rcvPort;
 
-  //process id
-  int pid;
-
   //file status
   int ascii;
   off_t currentPos;
   char* rnfrName;
   int aborFlag;
-  char* currentDir;
 
 } Session;
+Session new_session(int fd);
 
 typedef enum cmdlist
 {
@@ -108,9 +113,9 @@ typedef enum modes {
 
 //establish connection
 int init_socket_atport(int port);
-int init_connection_at(int port, InAddr ip);
+int init_connection_at(int port, IpAddr ip);
 int accept_connection(int);
-int message_client(Session *);
+void message_client(Session *);
 int create_socket(int);
 
 //command handler
@@ -123,10 +128,13 @@ typedef struct threadparam {
   Session* ssn;
 } ThreadParam;
 
+void communicate(int fd);
+
 void cmd_user(Command *, Session *);
 void cmd_pass(Command *, Session *);
 void cmd_retr(Command *, Session *);
 void cmd_stor(Command *, Session *);
+void cmd_rest(Command *, Session *);
 void cmd_quit(Session *);
 void cmd_syst(Session *);
 void cmd_type(Command *, Session *);
@@ -141,11 +149,14 @@ void cmd_rnfr(Command *, Session *);
 void cmd_rnto(Command *, Session *);
 void cmd_dele(Command*, Session *);
 
-
-void stringfy_commandline(char* dest, char* oringin);
+int sclose_sock(int);
+void stringfy_commandline(char* oringin);
 void parse_command(char *, Command *);
-void handle_command(Command*);
+void handle_command(Command*, Session*);
 
-int try_retr_connection(Session*);
-void translate_todir(char* buffer, char* filename, Session*);
-void reset_aborflag(Session* );
+int try_data_connection(Session*);
+
+int sever_wait(int signum);
+
+//void translate_todir(char* buffer, char* filename, Session*);
+//void reset_aborflag(Session* );

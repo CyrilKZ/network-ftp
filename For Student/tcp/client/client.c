@@ -26,7 +26,7 @@ int run(int argc, char **argv)
 	//����Ŀ��������ip��port
 	memset(&addr, 0, sizeof(addr));
 	addr.sin_family = AF_INET;
-	addr.sin_port = 10020;
+	addr.sin_port = htons(10020);
 	if (inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr) <= 0)
 	{ //ת��ip��ַ:���ʮ����-->������
 		printf("Error inet_pton(): %s(%d)\n", strerror(errno), errno);

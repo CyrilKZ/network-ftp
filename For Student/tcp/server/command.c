@@ -1,5 +1,5 @@
 #include "server.h"
-void stringfy_commandline(char* dest, char* raw)
+void stringfy_commandline(char* raw)
 {
   int len = strlen(raw);
   while(len > 0 && (raw[len - 1] == '\n' || raw[len - 1] == '\r'))
@@ -15,6 +15,66 @@ void parse_command(char *cmdline, Command *cmdobj)
   sscanf(cmdline, "%s %s", cmdobj->title, cmdobj->arg);
 }
 
+int check_stage(int cmdIdx, Session* ssn)
+{
+  if(cmdIdx == -1)
+  {
+    ssn->msgToClient = "500 Invalid command.\n";
+    message_client(ssn);
+    return -1;
+  }
+  if(cmdIdx == QUIT || cmdIdx == ABOR)
+  {
+    return 0;
+  }
+  if(ssn->authStage == CONNECTED && cmdIdx != USER)
+  {
+    ssn->msgToClient = "530 Please login with USER.\n";
+    message_client(ssn);
+    return -1;
+  }
+  if(ssn->authStage == USERNAME_OK && cmdIdx != PASS)
+  {
+    ssn->msgToClient = "530 Please use PASS.\n";
+    message_client(ssn);
+    return -1;
+  }
+  if(ssn->rcvMode != NOMODE && cmdIdx != RETR && cmdIdx != STOR)
+  {
+    ssn->msgToClient = "503 Mode selected, please transfer file with RETR or STOR.\n";
+    message_client(ssn);
+    return -1;
+  }
+  if(ssn->rcvMode == NOMODE && (cmdIdx == RETR && cmdIdx == STOR))
+  {
+    ssn->msgToClient = "503 Please select PORT or PASV mode.\n";
+    message_client(ssn);
+    return -1;
+  }
+  if(cmdIdx != RNTO && ssn->rnfrName != NULL)
+  {
+    ssn->msgToClient = "503 Cannot open connection.\n";
+    message_client(ssn);
+    return -1;
+  }
+  if(cmdIdx == RNTO && ssn->rnfrName == NULL)
+  {
+    ssn->msgToClient = "503 Please select file or directory with RNFR.\n";
+    message_client(ssn);
+    return -1;
+  }
+  return 0;
+}
+
+int sclose_sock(int fd)
+{
+  if(fd > 0)
+  {
+    close(fd);
+  }
+  return -1;
+}
+
 void handle_command(Command *cmd, Session *ssn)
 {
   /* determine what is the command */
@@ -27,6 +87,10 @@ void handle_command(Command *cmd, Session *ssn)
       cmdIdx = i;
       break;
     }
+  }
+  if(check_stage(cmdIdx, ssn) == -1)
+  {
+    return;
   }
   switch (cmdIdx)
   {
@@ -46,7 +110,7 @@ void handle_command(Command *cmd, Session *ssn)
     cmd_rest(cmd, ssn);
     break;
   case QUIT:
-    cmd_quit(cmd, ssn);
+    cmd_quit(ssn);
     break;
   case SYST:
     cmd_syst(ssn);
@@ -95,9 +159,9 @@ void cmd_user(Command* cmd, Session* ssn)
 {
   if(ssn->authStage >= USERNAME_OK)
   {
-    ssn->msgToClient = "502 Guest already logged in.\n"
+    ssn->msgToClient = "502 Guest already logged in.\n";
   }
-  else if(strcmp(cmd->arg,"anonymous"))
+  else if(strcmp(cmd->arg,"anonymous") == 0)
   {
     ssn->msgToClient = "331 Guest login ok, send your complete e-mail address as password.\n";
     ssn->authStage = USERNAME_OK; 
@@ -121,22 +185,13 @@ void cmd_pass(Command* cmd, Session* ssn)
     ssn->loginPsw = (char*)malloc((strlen(cmd->arg) + 1) * sizeof(char));
     strcpy(ssn->loginPsw, cmd->arg);
     ssn->msgToClient = "230 Guest login ok, welcome to this FTP sever!\n";
-  }
-  else
-  {
-    ssn->msgToClient = "530 Guest login failed, please send USER first.\n";
+    ssn->authStage = PASSWORD_OK;
   }
   message_client(ssn);
 }
 
 void cmd_pasv(Command* cmd, Session* ssn)
 {
-  if(ssn->authStage != PASSWORD_OK)
-  {
-    ssn->msgToClient = "530 Please login.\n";
-    message_client(ssn);
-    return;
-  }
   if(ssn->rcvMode != NOMODE)
   {
     ssn->msgToClient = "502 Mode already selected.\n";
@@ -146,9 +201,9 @@ void cmd_pasv(Command* cmd, Session* ssn)
   char msg[1024] = {0};
   IpAddr ip = ip_of(ssn->connection);
   SockPort port = random_port();
-  sprintf(msg, "227 Entering Passive Mode (%d,%d,%d,%d,%d,%d,%d,%d).\n", ip.h1, ip.h2, ip.h3, ip.h4, port.p1, port.p2);
+  sprintf(msg, "227 Entering Passive Mode (%d,%d,%d,%d,%d,%d).\n", ip.h1, ip.h2, ip.h3, ip.h4, port.p1, port.p2);
   ssn->msgToClient = msg;
-  ssn->mode = PASSIVE;
+  ssn->rcvMode = PASSIVE;
   if((ssn->pasvfd = init_socket_atport(port.p1 * 256 + port.p2)) == -1)
   {
     ssn->msgToClient = "452 Internal error";
@@ -158,12 +213,6 @@ void cmd_pasv(Command* cmd, Session* ssn)
 
 void cmd_port(Command* cmd, Session* ssn)
 {
-  if(ssn->authStage != PASSWORD_OK)
-  {
-    ssn->msgToClient = "530 Please login.\n";
-    message_client(ssn);
-    return;
-  }
   if(ssn->rcvMode != NOMODE)
   {
     ssn->msgToClient = "502 Mode already selected.\n";
@@ -175,11 +224,12 @@ void cmd_port(Command* cmd, Session* ssn)
   sscanf(cmd->arg, "%d,%d,%d,%d,%d,%d", &addr.h1, &addr.h2, &addr.h3, &addr.h4, &port.p1, &port.p2);
   ssn->rcvAddr = addr;
   ssn->rcvPort = port;
+  ssn->rcvMode = INPORT;
   ssn->msgToClient = "220 PORT command successful.\n";
   message_client(ssn);
 }
 
-int try_retr_connection(Session* ssn)
+int try_data_connection(Session* ssn)
 {
   if(ssn->rcvMode == PASSIVE)
   {
@@ -203,12 +253,6 @@ int try_retr_connection(Session* ssn)
 
 void cmd_retr(Command* cmd, Session* ssn)
 {
-  if(ssn->authStage != PASSWORD_OK)
-  {
-    ssn->msgToClient = "530 Please login.\n";
-    message_client(ssn);
-    return;
-  }
   if(ssn->rcvMode == NOMODE)
   {
     ssn->msgToClient = "550 Please select PORT or PASV mode.\n";
@@ -216,16 +260,20 @@ void cmd_retr(Command* cmd, Session* ssn)
     return;
   }
   char buffer[2048];
-  if(translate_todir(buffer, cmd->arg, ssn) == -1)
+  if(strlen(cmd->arg) >= 1024)
   {
-    ssn->msgToClient = "551 Filename too long";
+    ssn->msgToClient = "551 Filename too long.\n";
     message_client(ssn);
     return;
   }
-  int fd = open(buffer, O_RDONLY);
+  int fd = open(cmd->arg, O_RDONLY);
   if(fd == -1)
   {
-    ssn->msgToClient = "551 Cannot open file.\n";
+    ssn->msgToClient = "551 Cannot open file <";
+    strcpy(buffer, ssn->msgToClient);
+    strcat(buffer, cmd->arg);
+    strcat(buffer, ">.\n");
+    ssn->msgToClient = buffer;
     message_client(ssn);
     return;
   }
@@ -236,11 +284,11 @@ void cmd_retr(Command* cmd, Session* ssn)
   off_t remain = 0;
   if(lseek(fd, offset, SEEK_SET) == -1)
   {
-    ssn->msgToClient = "551 Cannot open file.\n";
+    ssn->msgToClient = "551 Cannot open file at given offset.\n";
     message_client(ssn);
     return;
   }
-  if(try_retr_connection(ssn) == -1)
+  if(try_data_connection(ssn) == -1)
   {
     return;
   }
@@ -277,11 +325,12 @@ void cmd_retr(Command* cmd, Session* ssn)
   {
     status = 0;
   }
-  close(ssn->datafd);
-  ssn->datafd = -1;
+  ssn->datafd = sclose_sock(ssn->datafd);
   close(fd);
-  close(ssn->pasvfd);
-  ssn->pasvfd = -1;
+  if(ssn->rcvMode == PASSIVE)
+  {
+    ssn->pasvfd = sclose_sock(ssn->pasvfd);
+  }
   ssn->rcvMode = NOMODE;
   switch (status)
   {
@@ -301,12 +350,6 @@ void cmd_retr(Command* cmd, Session* ssn)
 
 void cmd_stor(Command* cmd, Session* ssn)
 {
-  if(ssn->authStage != PASSWORD_OK)
-  {
-    ssn->msgToClient = "530 Please login.\n";
-    message_client(ssn);
-    return;
-  }
   if(ssn->rcvMode == NOMODE)
   {
     ssn->msgToClient = "550 Please select PORT or PASV mode.\n";
@@ -314,13 +357,13 @@ void cmd_stor(Command* cmd, Session* ssn)
     return;
   }  
   char buffer[2048];
-  if(translate_todir(buffer, cmd->arg, ssn) == -1)
+  if(strlen(cmd->arg) >= 1024)
   {
     ssn->msgToClient = "551 Filename too long";
     message_client(ssn);
     return;
   }
-  int fd = open(buffer, O_CREAT | O_WRONLY, 0666);
+  int fd = open(cmd->arg, O_CREAT | O_WRONLY, 0666);
   if(fd == -1)
   {
     ssn->msgToClient = "551 Cannot open file.\n";
@@ -345,7 +388,7 @@ void cmd_stor(Command* cmd, Session* ssn)
     message_client(ssn);
     return;
   }
-  if(try_retr_connection(ssn) == -1)
+  if(try_data_connection(ssn) == -1)
   {
     return;
   }
@@ -357,7 +400,7 @@ void cmd_stor(Command* cmd, Session* ssn)
   while(1)
   {
     memset(buffer, 0, 2048);
-    int n = read(ssn->datafd, fd, sizof(buffer));
+    int n = read(ssn->datafd, buffer, sizeof(buffer));
     if(n == -1)
     { 
       if(errno == EINTR)
@@ -370,6 +413,11 @@ void cmd_stor(Command* cmd, Session* ssn)
         break;
       }  
     }
+    if(n == 0)
+    {
+      status = 0;
+      break;
+    }
     if(ssn->aborFlag)
     {
       status = 2;
@@ -381,11 +429,12 @@ void cmd_stor(Command* cmd, Session* ssn)
       break;
     }
   }
-  close(ssn->datafd);
-  ssn->datafd = -1;
+  ssn->datafd = sclose_sock(ssn->datafd);
   close(fd);
-  close(ssn->pasvfd);
-  ssn->pasvfd = -1;
+  if(ssn->rcvMode == PASSIVE)
+  {
+    ssn->pasvfd = sclose_sock(ssn->pasvfd);
+  }
   ssn->rcvMode = NOMODE;
   switch (status)
   {
@@ -414,7 +463,17 @@ void cmd_type(Command* cmd, Session* ssn)
   else
   {
     ssn->ascii = 0;
+    ssn->msgToClient = "200 Type set to I.\n";
+    message_client(ssn);
+    return;
   }
+}
+
+void cmd_list(Command* cmd, Session* ssn)
+{
+  //todo
+  ssn->msgToClient = "250 LIST successful.\n";
+  message_client(ssn);
 }
 
 void cmd_cwd(Command* cmd, Session* ssn)
@@ -442,7 +501,7 @@ void cmd_mkd(Command* cmd, Session* ssn)
   char text[2048] = {0};
   if(cmd->arg[0] == '/')
   {
-    sprintf(text, "257 %s created.\n");
+    sprintf(text, "257 %s created.\n", cmd->arg);
   }
   else
   {
@@ -500,7 +559,7 @@ void cmd_rnfr(Command* cmd, Session* ssn)
 {
   if(strlen(cmd->arg) >= 256)
   {
-    ssn->msgToClient = "550 RNFR name too long.\n"
+    ssn->msgToClient = "550 RNFR name too long.\n";
     message_client(ssn);
     return;
   }
@@ -518,7 +577,7 @@ void cmd_rnto(Command* cmd, Session* ssn)
 {
   if(strlen(cmd->arg) >= 256)
   {
-    ssn->msgToClient = "550 RNTO name too long.\n"
+    ssn->msgToClient = "550 RNTO name too long.\n";
     message_client(ssn);
     return;
   }
@@ -551,7 +610,7 @@ void cmd_rest(Command* cmd, Session* ssn)
 
 void cmd_syst(Session* ssn)
 {
-  ssn->msgToClient = "215 UNIX type: L8.\n";
+  ssn->msgToClient = "215 UNIX Type: L8\n";
   message_client(ssn);
   return;
 }
@@ -560,14 +619,17 @@ void cmd_quit(Session* ssn)
 {
   ssn->msgToClient = "221 Goodbye.\n";
   message_client(ssn);
-  close(ssn->connection);
+  ssn->pasvfd = sclose_sock(ssn->pasvfd);
+  ssn->datafd = sclose_sock(ssn->datafd);
+  ssn->connection = sclose_sock(ssn->connection);
+  printf("Client disconnected\n");
   exit(0);
 }
 
-void reset_aborflag(Session* ssn)
-{
-  if(ssn->aborFlag)
-  {
-    ssn->aborFlag = 0;
-  }
-}
+// void reset_aborflag(Session* ssn)
+// {
+//   if(ssn->aborFlag)
+//   {
+//     ssn->aborFlag = 0;
+//   }
+// }
