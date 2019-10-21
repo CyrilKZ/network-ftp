@@ -5,19 +5,14 @@ int portNum = 21;
 
 void error_out(char *err)
 {
-	printf("%s", err);
+	//printf("%s", err);
 	exit(1);
 }
 
 void get_params(int argc, char **argv)
 {
 	char errMsg[40] = "Error: Invalid initial parameters\n";
-	char cwd[255];
-	char temp[256] = "tmp";
-	if (getcwd(cwd, sizeof(cwd)) == NULL)
-	{
-		error_out("Error: Work directory invalid\n");
-	}
+	char temp[256] = {0};
 	if (argc != 1 && argc != 3 && argc != 5)
 	{
 		error_out(errMsg);
@@ -45,7 +40,7 @@ void get_params(int argc, char **argv)
 	{
 		if (strcmp("-root", argv[1]) == 0)
 		{
-			strncpy(temp, argv[2], 200);
+			strncpy(temp, argv[2], 256);
 			if (strcmp("-port", argv[3]) == 0)
 			{
 				portNum = atoi(argv[4]);
@@ -68,7 +63,7 @@ void get_params(int argc, char **argv)
 			}
 			if (strcmp("-root", argv[3]) == 0)
 			{
-				strncpy(temp, argv[4], 200);
+				strncpy(temp, argv[4], 256);
 			}
 			else
 			{
@@ -80,9 +75,14 @@ void get_params(int argc, char **argv)
 			error_out(errMsg);
 		}
 	}
-	strncpy(rootDirectory, cwd, 255);
-	strcat(rootDirectory, "/");
-	strcat(rootDirectory, temp);
+	if(temp[0] == 0)
+	{
+		strncpy(rootDirectory, "/tmp", 256);
+	}
+	else
+	{
+		strncpy(rootDirectory, temp, 256);
+	}
 	if (access(rootDirectory, 04) == -1)
 	{
 		if (mkdir(rootDirectory, 0777) == -1)
@@ -186,16 +186,30 @@ int accept_connection(int socket)
 	return accept(socket, (struct sockaddr*)&clientAddr, &size);
 }
 
-// int translate_todir(char* buffer, char*filename, Session* ssn)
-// {
-// 	if(strlen(ssn->currentDir) > 1024 || strlen(filename) > 1024)
-// 	{
-// 		return -1;
-// 	}
-// 	strcpy(buffer, ssn->currentDir);
-// 	strcat(buffer, filename);
-// 	return 1;
-// }
+int translate_todir(char* buffer, char*filename)
+{
+	// getcwd(buffer, 1024);
+	// int len = strlen(buffer);
+	// if(buffer[len - 1] != '/')
+	// {
+	// 	buffer[len] = '/';
+	// 	buffer[len + 1] = 0;
+	// }
+	// strcat(buffer, filename);
+	buffer[0] = '.';
+	buffer[1] = '/';
+	buffer[2] = 0;
+	strcat(buffer, filename);
+	int len = strlen(buffer);
+	for(int i = 0; i < len - 2; ++i)
+	{
+		if(buffer[i] == '.' && buffer[i+1] == '.' && buffer[i+2] == '/')
+		{
+			return -1;
+		}
+	}
+	return 0;
+}
 void server_wait(int signum)
 {
   int status;
@@ -243,6 +257,7 @@ void communicate(int fd)
 
 int main(int argc, char **argv)
 {
+
 	get_params(argc, argv);
 
 	int listenfd, connfd;

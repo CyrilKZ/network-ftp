@@ -68,6 +68,7 @@ def test(port=21, directory='/tmp'):
     print 'current credit is %d' % credit
     # PORT download
     filename = 'test%d.data' % random.randint(100, 200)
+    #filename = 'test101.data'
     create_test_file(directory + '/' + filename)
     ftp.set_pasv(False)
     if not ftp.retrbinary('RETR %s' % filename, open(filename, 'wb').write).startswith('226'):

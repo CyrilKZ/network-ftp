@@ -39,13 +39,13 @@ int check_stage(int cmdIdx, Session* ssn)
     message_client(ssn);
     return -1;
   }
-  if(ssn->rcvMode != NOMODE && cmdIdx != RETR && cmdIdx != STOR)
+  if(ssn->rcvMode != NOMODE && cmdIdx != RETR && cmdIdx != STOR && cmdIdx != LIST)
   {
-    ssn->msgToClient = "503 Mode selected, please transfer file with RETR or STOR.\n";
+    ssn->msgToClient = "503 Mode selected, please transfer file with RETR or STOR, or get file list with LIST.\n";
     message_client(ssn);
     return -1;
   }
-  if(ssn->rcvMode == NOMODE && (cmdIdx == RETR && cmdIdx == STOR))
+  if(ssn->rcvMode == NOMODE && (cmdIdx == RETR || cmdIdx == STOR || cmdIdx == LIST))
   {
     ssn->msgToClient = "503 Please select PORT or PASV mode.\n";
     message_client(ssn);
@@ -253,30 +253,34 @@ int try_data_connection(Session* ssn)
 
 void cmd_retr(Command* cmd, Session* ssn)
 {
-  if(ssn->rcvMode == NOMODE)
-  {
-    ssn->msgToClient = "550 Please select PORT or PASV mode.\n";
-    message_client(ssn);
-    return;
-  }
-  char buffer[2048];
+  char buffer[2048] = {0};
   if(strlen(cmd->arg) >= 1024)
   {
     ssn->msgToClient = "551 Filename too long.\n";
     message_client(ssn);
     return;
   }
-  int fd = open(cmd->arg, O_RDONLY);
-  if(fd == -1)
+  if(translate_todir(buffer, cmd->arg) == -1)
   {
-    ssn->msgToClient = "551 Cannot open file <";
-    strcpy(buffer, ssn->msgToClient);
-    strcat(buffer, cmd->arg);
-    strcat(buffer, ">.\n");
-    ssn->msgToClient = buffer;
+    ssn->msgToClient = "551 Cannot open file.\n";
+    // strcpy(buffer, ssn->msgToClient);
+    // strcat(buffer, cmd->arg);
+    // strcat(buffer, ">.\n");
+    // ssn->msgToClient = buffer;
     message_client(ssn);
     return;
   }
+  int fd = open(buffer, O_RDONLY);
+  if(fd == -1)
+  {
+    char msg[2048] = "551 Cannot open file <";
+    strcat(msg, buffer);
+    strcat(msg, ">.\n");
+    ssn->msgToClient = msg;
+    message_client(ssn);
+    return;
+  }
+  memset(buffer, 0, 2048);
   struct stat buf;
   fstat(fd, &buf);
   off_t total = buf.st_size;
@@ -350,20 +354,25 @@ void cmd_retr(Command* cmd, Session* ssn)
 
 void cmd_stor(Command* cmd, Session* ssn)
 {
-  if(ssn->rcvMode == NOMODE)
-  {
-    ssn->msgToClient = "550 Please select PORT or PASV mode.\n";
-    message_client(ssn);
-    return;
-  }  
-  char buffer[2048];
+  char buffer[2048] = {0};
   if(strlen(cmd->arg) >= 1024)
   {
-    ssn->msgToClient = "551 Filename too long";
+    ssn->msgToClient = "551 Filename too long.\n";
     message_client(ssn);
     return;
   }
-  int fd = open(cmd->arg, O_CREAT | O_WRONLY, 0666);
+  if(translate_todir(buffer, cmd->arg) == -1)
+  {
+    ssn->msgToClient = "551 Cannot open file.\n";
+    // strcpy(buffer, ssn->msgToClient);
+    // strcat(buffer, cmd->arg);
+    // strcat(buffer, ">.\n");
+    // ssn->msgToClient = buffer;
+    message_client(ssn);
+    return;
+  }
+  int fd = open(buffer, O_CREAT | O_WRONLY, 0666);
+  memset(buffer, 0, 2048);
   if(fd == -1)
   {
     ssn->msgToClient = "551 Cannot open file.\n";
@@ -471,8 +480,82 @@ void cmd_type(Command* cmd, Session* ssn)
 
 void cmd_list(Command* cmd, Session* ssn)
 {
-  //todo
-  ssn->msgToClient = "250 LIST successful.\n";
+  char buffer[2048] = "ls -l";
+  if(strlen(cmd->arg) >= 512)
+  {
+    ssn->msgToClient = "551 Invalid argument.\n";
+    message_client(ssn);
+    return;
+  }
+  if(cmd->arg[0] != 0)
+  {
+    strcat(buffer, " ");
+  }
+  strcat(buffer, cmd->arg);
+  FILE* shellf = popen(buffer, "r");
+  if(shellf == NULL)
+  {
+    char msg[2048] = "551 Cannot open shell";
+    ssn->msgToClient = msg;
+    message_client(ssn);
+    return;
+  }
+  memset(buffer, 0, 2048);
+  if(try_data_connection(ssn) == -1)
+  {
+    return;
+  }
+  ssn->msgToClient = "150 Opening connection for LIST data.\n";
+  message_client(ssn);
+  int status = 0;
+  int n = 0;
+  while((n = fread(buffer, sizeof(char), 2048, shellf)) > 0)
+  {
+    int flag = write(ssn->datafd, buffer, strlen(buffer));
+    if(flag == -1)
+    {
+      status = 1;
+      break;
+    }
+    if(ssn->aborFlag)
+    {
+      status = 2;
+      break;
+    }
+    if(n < 2048)
+    {
+      status = 0;
+      break;
+    }
+  }
+  if(n == 0)
+  {
+    status = 0;
+  }
+  else if(n < 0)
+  {
+    status = 1;
+  }
+  ssn->datafd = sclose_sock(ssn->datafd);
+  pclose(shellf);
+  if(ssn->rcvMode == PASSIVE)
+  {
+    ssn->pasvfd = sclose_sock(ssn->pasvfd);
+  }
+  ssn->rcvMode = NOMODE;
+  switch (status)
+  {
+  case 0:
+    ssn->msgToClient = "226 LIST Transfer complete.\n";
+    break;
+  case 1:
+    ssn->msgToClient = "426 Fail to transfer file.\n";
+    break;
+  case 2:
+    ssn->msgToClient = "450 Transfer interrupted.\n";
+  default:
+    break;
+  }
   message_client(ssn);
 }
 

@@ -158,5 +158,5 @@ int try_data_connection(Session*);
 
 int sever_wait(int signum);
 
-//void translate_todir(char* buffer, char* filename, Session*);
+int translate_todir(char* buffer, char* filename);
 //void reset_aborflag(Session* );
