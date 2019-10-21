@@ -35,20 +35,6 @@ typedef struct sockport {
   int p2;
 } SockPort;
 
-IpAddr ip_of(int sock);
-SockPort random_port();
-typedef enum modes {
-  PASSIVE, INPORT, NOMODE
-} Modes;
-
-//establish connection
-int init_socket_atport(int port);
-int init_connection_at(int port, InAddr ip);
-int accept_connection(int);
-int message_client(Session *);
-int create_socket(int);
-
-//command handler
 typedef struct comand
 {
   char title[5];
@@ -91,7 +77,6 @@ typedef struct session
 
 } Session;
 
-
 typedef enum cmdlist
 {
   USER,
@@ -113,9 +98,28 @@ typedef enum cmdlist
   RNTO
 } CmdList;
 
+IpAddr ip_of(int sock);
+SockPort random_port();
+typedef enum modes {
+  PASSIVE, INPORT, NOMODE
+} Modes;
+
+//establish connection
+int init_socket_atport(int port);
+int init_connection_at(int port, InAddr ip);
+int accept_connection(int);
+int message_client(Session *);
+int create_socket(int);
+
+//command handler
 static const char *CmdListText[] = {
     "USER", "PASS", "RETR", "STOR", "QUIT", "ABOR", "SYST", "TYPE", 
     "PORT", "PASV", "MKD", "CWD", "PWD", "LIST", "RMD", "RNFR", "RNTO"};
+
+typedef struct threadparam {
+  Command* cmd;
+  Session* ssn;
+} ThreadParam;
 
 void cmd_user(Command *, Session *);
 void cmd_pass(Command *, Session *);
@@ -133,6 +137,8 @@ void cmd_list(Command *, Session *);
 void cmd_rmd(Command *, Session *);
 void cmd_rnfr(Command *, Session *);
 void cmd_rnto(Command *, Session *);
+
+
 
 void parse_command(char *, Command *);
 void handle_command(Command*);

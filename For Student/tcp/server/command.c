@@ -202,7 +202,7 @@ void cmd_retr(Command* cmd, Session* ssn)
   char buffer[2048];
   if(translate_todir(buffer, cmd->arg, ssn) == -1)
   {
-    ssn->msgToClient = "502 Filename too long";
+    ssn->msgToClient = "551 Filename too long";
     message_client(ssn);
     return;
   }
@@ -264,6 +264,9 @@ void cmd_retr(Command* cmd, Session* ssn)
   close(ssn->datafd);
   ssn->datafd = -1;
   close(fd);
+  close(ssn->pasvfd);
+  ssn->pasvfd = -1;
+  ssn->rcvMode = NOMODE;
   switch (status)
   {
   case 0:
@@ -282,14 +285,113 @@ void cmd_retr(Command* cmd, Session* ssn)
 
 void cmd_stor(Command* cmd, Session* ssn)
 {
-  
+  if(ssn->authStage != PASSWORD_OK)
+  {
+    ssn->msgToClient = "530 Please login.\n";
+    message_client(ssn);
+    return;
+  }
+  if(ssn->rcvMode == NOMODE)
+  {
+    ssn->msgToClient = "550 Please select PORT or PASV mode.\n";
+    message_client(ssn);
+    return;
+  }  
+  char buffer[2048];
+  if(translate_todir(buffer, cmd->arg, ssn) == -1)
+  {
+    ssn->msgToClient = "551 Filename too long";
+    message_client(ssn);
+    return;
+  }
+  int fd = open(buffer, O_CREAT | O_WRONLY, 0666);
+  if(fd == -1)
+  {
+    ssn->msgToClient = "551 Cannot open file.\n";
+    message_client(ssn);
+    return;
+  }
+  ftruncate(fd, 0);
+  if (lseek(fd, 0, SEEK_SET) < 0)
+  {
+    ssn->msgToClient = "551 Cannot open file.\n";
+    message_client(ssn);
+    return;
+  }
+  struct stat buf;
+  fstat(fd, &buf);
+  off_t total = buf.st_size;
+  off_t offset = ssn->currentPos;
+  off_t remain = 0;
+  if(lseek(fd, offset, SEEK_SET) == -1)
+  {
+    ssn->msgToClient = "551 Cannot open file.\n";
+    message_client(ssn);
+    return;
+  }
+  if(try_retr_connection(ssn) == -1)
+  {
+    return;
+  }
+  memset(buffer, 0, 2048);
+  sprintf(buffer, "150 Opening BINARY mode data connection for %s (%ld bytes).\n", cmd->arg, total);
+  ssn->msgToClient = buffer;
+  int status = 0;
+  message_client(ssn); 
+  while(1)
+  {
+    memset(buffer, 0, 2048);
+    int n = read(ssn->datafd, fd, sizof(buffer));
+    if(n == -1)
+    { 
+      if(errno == EINTR)
+      {
+        continue;
+      }
+      else
+      {
+        status = 1;
+        break;
+      }  
+    }
+    if(ssn->aborFlag)
+    {
+      status = 2;
+      break;
+    }
+    if(write(fd, buffer, n) != n)
+    {
+      status = 1;
+      break;
+    }
+  }
+  close(ssn->datafd);
+  ssn->datafd = -1;
+  close(fd);
+  close(ssn->pasvfd);
+  ssn->pasvfd = -1;
+  ssn->rcvMode = NOMODE;
+  switch (status)
+  {
+  case 0:
+    ssn->msgToClient = "226 Transfer complete.\n";
+    break;
+  case 1:
+    ssn->msgToClient = "426 Fail to transfer file.\n";
+    break;
+  case 2:
+    ssn->msgToClient = "450 Transfer interrupted.\n";
+  default:
+    break;
+  }
+  message_client(ssn);
 }
 
 void cmd_type(Command* cmd, Session* ssn)
 {
   if(strcmp(cmd->arg, "I") != 0)
   {
-    ssn->msgToClient = "500 TYPE not supported.\n";
+    ssn->msgToClient = "500 type not supported.\n";
     message_client(ssn);
     return;
   }
@@ -297,7 +399,29 @@ void cmd_type(Command* cmd, Session* ssn)
   {
     ssn->ascii = 0;
   }
-  
+}
+
+void cmd_cwd(Command* cmd, Session* ssn)
+{
+  if(chdir(cmd->arg) < 0)
+  {
+    ssn->msgToClient = "550 Fail to change directory.\n";
+  }
+  else
+  {
+    ssn->msgToClient = "250 Directory change successful.\n";
+  }
+  message_client(ssn);
+}
+
+void cmd_mkd(Command* cmd, Session* ssn)
+{
+  if(mkdir(cmd->arg, 0777) < 0)
+  {
+    ssn->msgToClient = "550 Fail to create directory.\n";
+    message_client(ssn);
+    return;
+  }
 }
 
 void reset_aborflag(Session* ssn)
