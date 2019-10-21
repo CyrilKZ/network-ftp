@@ -83,6 +83,7 @@ typedef enum cmdlist
   PASS,
   RETR,
   STOR,
+  REST,
   QUIT,
   ABOR,
   SYST,
@@ -94,6 +95,7 @@ typedef enum cmdlist
   PWD,
   LIST,
   RMD,
+  DELE,
   RNFR,
   RNTO
 } CmdList;
@@ -113,8 +115,8 @@ int create_socket(int);
 
 //command handler
 static const char *CmdListText[] = {
-    "USER", "PASS", "RETR", "STOR", "QUIT", "ABOR", "SYST", "TYPE", 
-    "PORT", "PASV", "MKD", "CWD", "PWD", "LIST", "RMD", "RNFR", "RNTO"};
+    "USER", "PASS", "RETR", "STOR", "REST", "QUIT", "ABOR", "SYST", "TYPE",
+    "PORT", "PASV", "MKD", "CWD", "PWD", "LIST", "RMD", "DELE", "RNFR", "RNTO"};
 
 typedef struct threadparam {
   Command* cmd;
@@ -126,7 +128,7 @@ void cmd_pass(Command *, Session *);
 void cmd_retr(Command *, Session *);
 void cmd_stor(Command *, Session *);
 void cmd_quit(Session *);
-void cmd_syst(Command *, Session *);
+void cmd_syst(Session *);
 void cmd_type(Command *, Session *);
 void cmd_port(Command *, Session *);
 void cmd_pasv(Command *, Session *);
@@ -137,9 +139,10 @@ void cmd_list(Command *, Session *);
 void cmd_rmd(Command *, Session *);
 void cmd_rnfr(Command *, Session *);
 void cmd_rnto(Command *, Session *);
+void cmd_dele(Command*, Session *);
 
 
-
+void stringfy_commandline(char* dest, char* oringin);
 void parse_command(char *, Command *);
 void handle_command(Command*);
 

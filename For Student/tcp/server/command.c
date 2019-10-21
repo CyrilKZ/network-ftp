@@ -1,4 +1,14 @@
 #include "server.h"
+void stringfy_commandline(char* dest, char* raw)
+{
+  int len = strlen(raw);
+  while(len > 0 && (raw[len - 1] == '\n' || raw[len - 1] == '\r'))
+  {
+    raw[len - 1] = 0;
+    --len;
+  }
+  return;
+}
 
 void parse_command(char *cmdline, Command *cmdobj)
 {
@@ -32,11 +42,14 @@ void handle_command(Command *cmd, Session *ssn)
   case STOR:
     cmd_stor(cmd, ssn);
     break;
+  case REST:
+    cmd_rest(cmd, ssn);
+    break;
   case QUIT:
     cmd_quit(cmd, ssn);
     break;
   case SYST:
-    cmd_syst(cmd, ssn);
+    cmd_syst(ssn);
     break;
   case TYPE:
     cmd_type(cmd, ssn);
@@ -64,6 +77,9 @@ void handle_command(Command *cmd, Session *ssn)
     break;
   case RNFR:
     cmd_rnfr(cmd, ssn);
+    break;
+  case DELE:
+    cmd_dele(cmd, ssn);
     break;
   case RNTO:
     cmd_rnto(cmd, ssn);
@@ -422,6 +438,130 @@ void cmd_mkd(Command* cmd, Session* ssn)
     message_client(ssn);
     return;
   }
+  char dir[1024] = {0};
+  char text[2048] = {0};
+  if(cmd->arg[0] == '/')
+  {
+    sprintf(text, "257 %s created.\n");
+  }
+  else
+  {
+    getcwd(dir, 4096);
+    if(dir[strlen(dir)-1] == '/')
+    {
+      sprintf(text, "257 %s%s created.\n", dir, cmd->arg);
+    }
+    else
+    {
+      sprintf(text, "257 %s/%s created.\n", dir, cmd->arg);
+    }
+  }
+  message_client(ssn);
+  return;
+}
+
+void cmd_rmd(Command* cmd, Session* ssn)
+{
+  if(rmdir(cmd->arg) < 0)
+  {
+    ssn->msgToClient = "550 Fail to remove directory.\n";
+  }
+  else
+  {
+    ssn->msgToClient = "250 Directory remove operation successful.\n"; 
+  }
+  message_client(ssn);
+}
+
+void cmd_dele(Command* cmd, Session* ssn)
+{
+  if(unlink(cmd->arg) < 0)
+  {
+    ssn->msgToClient = "550 Fail to delete file.\n";
+  }
+  else
+  {
+    ssn->msgToClient = "250 File remove operation successful.\n"; 
+  }
+  message_client(ssn); 
+}
+
+void cmd_pwd(Command* cmd, Session* ssn)
+{
+  char text[2048] = {0};
+  char dir[1024] = {0};
+  getcwd(dir, 1023);
+  sprintf(text, "\"%s\"", dir);
+  ssn->msgToClient = dir;
+  message_client(ssn);
+}
+
+void cmd_rnfr(Command* cmd, Session* ssn)
+{
+  if(strlen(cmd->arg) >= 256)
+  {
+    ssn->msgToClient = "550 RNFR name too long.\n"
+    message_client(ssn);
+    return;
+  }
+  if(ssn->rnfrName == NULL)
+  {
+    ssn->rnfrName = (char*)malloc(256*sizeof(char));
+  }
+  memset(ssn->rnfrName, 0 , 256);
+  strcpy(ssn->rnfrName, cmd->arg);
+  ssn->msgToClient = "350 Ready for RNTO.\n";
+  message_client(ssn);
+}
+
+void cmd_rnto(Command* cmd, Session* ssn)
+{
+  if(strlen(cmd->arg) >= 256)
+  {
+    ssn->msgToClient = "550 RNTO name too long.\n"
+    message_client(ssn);
+    return;
+  }
+  if(ssn->rnfrName == NULL)
+  {
+    ssn->msgToClient = "503 Use RNFR first.\n";
+    message_client(ssn);
+    return;
+  }
+  if(rename(ssn->rnfrName, cmd->arg) == -1)
+  {
+    ssn->msgToClient = "550 Fail to rename file or directory.\n";
+  }
+  else
+  {
+    ssn->msgToClient = "250 Rename succesfull.\n";
+  }
+  message_client(ssn);
+  return;
+}
+
+void cmd_rest(Command* cmd, Session* ssn)
+{
+  ssn->currentPos = atoi(cmd->arg);
+  char msg[1024] = {0};
+  sprintf(msg, "350 Restart position accepted (%ld)", (long)ssn->currentPos);
+  ssn->msgToClient = msg;
+  message_client(ssn);
+}
+
+void cmd_syst(Session* ssn)
+{
+  ssn->msgToClient = "215 UNIX type: L8.\n";
+  message_client(ssn);
+  return;
+}
+
+void cmd_quit(Session* ssn)
+{
+  ssn->msgToClient = "221 Goodbye.\n";
+  message_client(ssn);
+  close(ssn->connection);
+  exit(0);
 }
 
 void reset_aborflag(Session* ssn)
