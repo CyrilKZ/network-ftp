@@ -606,7 +606,7 @@ void cmd_rmd(Command* cmd, Session* ssn)
 {
   if(rmdir(cmd->arg) < 0)
   {
-    ssn->msgToClient = "550 Fail to remove directory.\n";
+    ssn->msgToClient = "550 Fail to remove directory, it might be a file.\n";
   }
   else
   {
@@ -619,7 +619,7 @@ void cmd_dele(Command* cmd, Session* ssn)
 {
   if(unlink(cmd->arg) < 0)
   {
-    ssn->msgToClient = "550 Fail to delete file.\n";
+    ssn->msgToClient = "550 Fail to delete file, it might be a directory.\n";
   }
   else
   {
@@ -633,7 +633,7 @@ void cmd_pwd(Command* cmd, Session* ssn)
   char text[2048] = {0};
   char dir[1024] = {0};
   getcwd(dir, 1023);
-  sprintf(text, "\"%s\"", dir);
+  sprintf(text, "250 \"%s\".\n", dir);
   ssn->msgToClient = dir;
   message_client(ssn);
 }
