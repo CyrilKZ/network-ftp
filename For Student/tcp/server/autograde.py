@@ -39,9 +39,9 @@ def create_test_file(filename):
 def test(port=21, directory='/tmp'):
   global credit
   if port == 21 and directory == '/tmp':
-    server = subprocess.Popen('./server', stdout=subprocess.PIPE)
+    server = subprocess.Popen('./server', stdout=0)
   else:
-    server = subprocess.Popen(['./server', '-port', '%d' % port, '-root', directory], stdout=subprocess.PIPE)
+    server = subprocess.Popen(['./server', '-port', '%d' % port, '-root', directory], stdout=0)
   time.sleep(0.1)
   try:
     ftp = FTP()

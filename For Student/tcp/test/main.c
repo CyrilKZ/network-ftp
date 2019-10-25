@@ -1,26 +1,29 @@
-#include <unistd.h>
-#include <stdio.h>
+#include <sys/socket.h>
 #include <sys/stat.h>
-#include <sys/types.h>
+#include <sys/sendfile.h>
+#include <sys/wait.h>
+#include <netinet/in.h>
+
+#include <arpa/inet.h>
+#include <unistd.h>
+#include <errno.h>
+#include <time.h>
+
+#include <signal.h>
+#include <fcntl.h>
+#include <ctype.h>
 #include <string.h>
+#include <memory.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <pwd.h>
+#include <dirent.h>
+
+
+
 
 int main(){
-  char buff[200] = {0};
-  getcwd(buff, 200);
-  strcat(buff, "/temp");
-  printf("%s\n", buff);
-  printf("%d\n", chroot(buff));
-  memset(buff, 0, 200);
-  getcwd(buff, 200);
-  printf("%s\n", buff);
-  printf("%d\n", chdir("/temp2"));
-  memset(buff, 0, 200);
-  getcwd(buff, 200);
-  printf("%s\n", buff);
-  //int m = mkdir("/temp2", S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH);
-  //printf("%d\n", m);
-  int i = 0;
-  while(1){
-    ++i;
-  }
+  chroot("/tmp");
+  chdir("/");
+  rename("test", "tmp");
 }

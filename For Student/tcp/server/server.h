@@ -130,33 +130,33 @@ typedef struct threadparam {
 
 void communicate(int fd);
 
-void cmd_user(Command *, Session *);
-void cmd_pass(Command *, Session *);
-void cmd_retr(Command *, Session *);
-void cmd_stor(Command *, Session *);
-void cmd_rest(Command *, Session *);
-void cmd_quit(Session *);
-void cmd_syst(Session *);
-void cmd_type(Command *, Session *);
-void cmd_port(Command *, Session *);
-void cmd_pasv(Command *, Session *);
-void cmd_mkd(Command *, Session *);
-void cmd_cwd(Command *, Session *);
-void cmd_pwd(Command *, Session *);
-void cmd_list(Command *, Session *);
-void cmd_rmd(Command *, Session *);
-void cmd_rnfr(Command *, Session *);
-void cmd_rnto(Command *, Session *);
-void cmd_dele(Command*, Session *);
+void cmd_user(Command*, Session*);
+void cmd_pass(Command*, Session*);
+void cmd_retr(Command*, Session*);
+void cmd_stor(Command*, Session*);
+void cmd_rest(Command*, Session*);
+void cmd_quit(Session*);
+void cmd_syst(Session*);
+void cmd_type(Command*, Session*);
+void cmd_port(Command*, Session*);
+void cmd_pasv(Command*, Session*);
+void cmd_mkd(Command*, Session*);
+void cmd_cwd(Command*, Session*);
+void cmd_pwd(Command*, Session*);
+void cmd_list(Command*, Session*);
+void cmd_rmd(Command*, Session*);
+void cmd_rnfr(Command*, Session*);
+void cmd_rnto(Command*, Session*);
+void cmd_dele(Command*, Session*);
 
 int sclose_sock(int);
 void stringfy_commandline(char* oringin);
-void parse_command(char *, Command *);
+void parse_command(char*, Command*);
 void handle_command(Command*, Session*);
 
 int try_data_connection(Session*);
-
+int fakelsl(int datafd, char* filename);
 int sever_wait(int signum);
 
-int translate_todir(char* buffer, char* filename);
+int test_dir(char* );
 //void reset_aborflag(Session* );

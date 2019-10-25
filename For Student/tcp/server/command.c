@@ -260,17 +260,13 @@ void cmd_retr(Command* cmd, Session* ssn)
     message_client(ssn);
     return;
   }
-  if(translate_todir(buffer, cmd->arg) == -1)
+  if(test_dir(cmd->arg) == -1)
   {
-    ssn->msgToClient = "551 Cannot open file.\n";
-    // strcpy(buffer, ssn->msgToClient);
-    // strcat(buffer, cmd->arg);
-    // strcat(buffer, ">.\n");
-    // ssn->msgToClient = buffer;
+    ssn->msgToClient = "551 Invalid filename.\n";
     message_client(ssn);
     return;
   }
-  int fd = open(buffer, O_RDONLY);
+  int fd = open(cmd->arg, O_RDONLY);
   if(fd == -1)
   {
     char msg[2048] = "551 Cannot open file <";
@@ -280,7 +276,6 @@ void cmd_retr(Command* cmd, Session* ssn)
     message_client(ssn);
     return;
   }
-  memset(buffer, 0, 2048);
   struct stat buf;
   fstat(fd, &buf);
   off_t total = buf.st_size;
@@ -361,18 +356,13 @@ void cmd_stor(Command* cmd, Session* ssn)
     message_client(ssn);
     return;
   }
-  if(translate_todir(buffer, cmd->arg) == -1)
+  if(test_dir(cmd->arg) == -1)
   {
-    ssn->msgToClient = "551 Cannot open file.\n";
-    // strcpy(buffer, ssn->msgToClient);
-    // strcat(buffer, cmd->arg);
-    // strcat(buffer, ">.\n");
-    // ssn->msgToClient = buffer;
+    ssn->msgToClient = "551 Invalid filename.\n";
     message_client(ssn);
     return;
   }
-  int fd = open(buffer, O_CREAT | O_WRONLY, 0666);
-  memset(buffer, 0, 2048);
+  int fd = open(cmd->arg, O_CREAT | O_WRONLY, 0666);
   if(fd == -1)
   {
     ssn->msgToClient = "551 Cannot open file.\n";
@@ -480,64 +470,27 @@ void cmd_type(Command* cmd, Session* ssn)
 
 void cmd_list(Command* cmd, Session* ssn)
 {
-  char buffer[2048] = "ls -l";
-  if(strlen(cmd->arg) >= 512)
-  {
-    ssn->msgToClient = "551 Invalid argument.\n";
-    message_client(ssn);
-    return;
-  }
-  if(cmd->arg[0] != 0)
-  {
-    strcat(buffer, " ");
-  }
-  strcat(buffer, cmd->arg);
-  FILE* shellf = popen(buffer, "r");
-  if(shellf == NULL)
-  {
-    char msg[2048] = "551 Cannot open shell";
-    ssn->msgToClient = msg;
-    message_client(ssn);
-    return;
-  }
-  memset(buffer, 0, 2048);
   if(try_data_connection(ssn) == -1)
   {
     return;
   }
   ssn->msgToClient = "150 Opening connection for LIST data.\n";
   message_client(ssn);
+  char *arg;
+  if(cmd->arg[0] == 0)
+  {
+    arg = ".";
+  }
+  else
+  {
+    arg = cmd->arg;
+  }
   int status = 0;
-  int n = 0;
-  while((n = fread(buffer, sizeof(char), 2048, shellf)) > 0)
-  {
-    int flag = write(ssn->datafd, buffer, strlen(buffer));
-    if(flag == -1)
-    {
-      status = 1;
-      break;
-    }
-    if(ssn->aborFlag)
-    {
-      status = 2;
-      break;
-    }
-    if(n < 2048)
-    {
-      status = 0;
-      break;
-    }
-  }
-  if(n == 0)
-  {
-    status = 0;
-  }
-  else if(n < 0)
+  if(fakelsl(ssn->datafd, arg) != 0)
   {
     status = 1;
   }
   ssn->datafd = sclose_sock(ssn->datafd);
-  pclose(shellf);
   if(ssn->rcvMode == PASSIVE)
   {
     ssn->pasvfd = sclose_sock(ssn->pasvfd);
@@ -584,20 +537,21 @@ void cmd_mkd(Command* cmd, Session* ssn)
   char text[2048] = {0};
   if(cmd->arg[0] == '/')
   {
-    sprintf(text, "257 %s created.\n", cmd->arg);
+    sprintf(text, "250 %s created.\n", cmd->arg);
   }
   else
   {
     getcwd(dir, 4096);
     if(dir[strlen(dir)-1] == '/')
     {
-      sprintf(text, "257 %s%s created.\n", dir, cmd->arg);
+      sprintf(text, "250 %s%s created.\n", dir, cmd->arg);
     }
     else
     {
-      sprintf(text, "257 %s/%s created.\n", dir, cmd->arg);
+      sprintf(text, "250 %s/%s created.\n", dir, cmd->arg);
     }
   }
+  ssn->msgToClient = text;
   message_client(ssn);
   return;
 }
@@ -634,7 +588,7 @@ void cmd_pwd(Command* cmd, Session* ssn)
   char dir[1024] = {0};
   getcwd(dir, 1023);
   sprintf(text, "250 \"%s\".\n", dir);
-  ssn->msgToClient = dir;
+  ssn->msgToClient = text;
   message_client(ssn);
 }
 
@@ -673,10 +627,14 @@ void cmd_rnto(Command* cmd, Session* ssn)
   if(rename(ssn->rnfrName, cmd->arg) == -1)
   {
     ssn->msgToClient = "550 Fail to rename file or directory.\n";
+    free(ssn->rnfrName);
+    ssn->rnfrName = NULL;
   }
   else
   {
     ssn->msgToClient = "250 Rename succesfull.\n";
+    free(ssn->rnfrName);
+    ssn->rnfrName = NULL;
   }
   message_client(ssn);
   return;
@@ -705,6 +663,10 @@ void cmd_quit(Session* ssn)
   ssn->pasvfd = sclose_sock(ssn->pasvfd);
   ssn->datafd = sclose_sock(ssn->datafd);
   ssn->connection = sclose_sock(ssn->connection);
+  if(ssn->rnfrName != NULL)
+  {
+    free(ssn->rnfrName);
+  }
   printf("Client disconnected\n");
   exit(0);
 }
@@ -716,3 +678,79 @@ void cmd_quit(Session* ssn)
 //     ssn->aborFlag = 0;
 //   }
 // }
+
+int fakelsl(int datafd, char* name)
+{
+  DIR* dp = opendir(name);
+  if(dp == NULL)
+  {
+    return -1;
+  }
+  struct dirent* entry;
+  struct stat statBuffer;
+  time_t rawTime;
+  struct tm* realTime;
+  char timeBuffer[81] = {0};
+  char pmsBuffer[11] = {0};
+  char pmsSubBuffer[4] = {0};
+  while(entry = readdir(dp))
+  {
+
+    if(stat(entry->d_name, &statBuffer) == -1)
+    {
+      return -1;
+    }
+    if(strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0)
+    {
+      continue;
+    }
+    rawTime = statBuffer.st_mtime;
+    realTime = localtime(&rawTime);
+    memset(timeBuffer, 0, 81);
+    strftime(timeBuffer, 80, "%b %d %H:%M", realTime);
+
+    int pmsConst = statBuffer.st_mode;
+    int pms = 0;
+    int pmsFlag = 0;
+    int pread = 0;
+    int pwrite = 0;
+    int pexec = 0;
+    memset(pmsSubBuffer, 0, 4);
+    memset(pmsBuffer, 0, 11);
+    for(int i = 6; i >= 0; i -= 3)
+    {
+      pms = ((pmsConst & ALLPERMS) >> i) & 0x07;
+      memset(pmsSubBuffer, 0, 3);
+      pread = (pms >> 2) & 1;
+      pwrite = (pms >> 1) & 1;
+      pexec = pms & 1;
+      sprintf(pmsSubBuffer, "%c%c%c", pread? 'r':'-', pwrite? 'w':'-', pexec? 'x':'-');
+      strcat(pmsBuffer, pmsSubBuffer);
+    }
+    if(dprintf(
+      datafd, 
+      "%c%s %5ld %4d %4d %3ld %s %s\r\n", 
+      (entry->d_type == DT_DIR)?'d':'-', 
+      pmsBuffer, 
+      statBuffer.st_nlink,
+      statBuffer.st_uid,
+      statBuffer.st_gid,
+      statBuffer.st_size,
+      timeBuffer,
+      entry->d_name
+      ) < 0)
+    {
+      return -1;
+    }
+    printf("Send list line: %c%s\t%5ld\t%4d\t%4d\t%3ld\t%s\t%s\r\n", 
+    (entry->d_type == DT_DIR)?'d':'-', 
+    pmsBuffer, 
+    statBuffer.st_nlink, 
+    statBuffer.st_uid, 
+    statBuffer.st_gid, 
+    statBuffer.st_size,
+    timeBuffer,
+    entry->d_name);
+  }
+  return 0;
+}

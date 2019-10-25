@@ -186,20 +186,8 @@ int accept_connection(int socket)
 	return accept(socket, (struct sockaddr*)&clientAddr, &size);
 }
 
-int translate_todir(char* buffer, char*filename)
+int test_dir(char* buffer)
 {
-	// getcwd(buffer, 1024);
-	// int len = strlen(buffer);
-	// if(buffer[len - 1] != '/')
-	// {
-	// 	buffer[len] = '/';
-	// 	buffer[len + 1] = 0;
-	// }
-	// strcat(buffer, filename);
-	buffer[0] = '.';
-	buffer[1] = '/';
-	buffer[2] = 0;
-	strcat(buffer, filename);
 	int len = strlen(buffer);
 	for(int i = 0; i < len - 2; ++i)
 	{
@@ -240,6 +228,7 @@ void communicate(int fd)
 			continue;
 		}
 		stringfy_commandline(buffer);
+		printf("raw msg received: <%s>\n", buffer);
 		if(buffer[0] > 127 || buffer[0] <= 0)
 		{
 			ssn.msgToClient = "500 Invalid command.\n";
@@ -252,14 +241,16 @@ void communicate(int fd)
 		memset(&cmd, 0, sizeof(Command));
 		memset(buffer, 0, sizeof(buffer));
 	}
+	if(ssn.rnfrName != NULL)
+  {
+    free(ssn.rnfrName);
+  }
 	printf("Client disconnected\n");
 }
 
 int main(int argc, char **argv)
 {
-
 	get_params(argc, argv);
-
 	int listenfd, connfd;
 	struct sockaddr_in addr;
 	char sentence[8192] = {0};
@@ -300,7 +291,7 @@ int main(int argc, char **argv)
 		{
 			signal(SIGCHLD, server_wait);
 			printf("Connected\n");
-			//close(listenfd);
+			listenfd = sclose_sock(listenfd);
 			communicate(connfd);
 			connfd = sclose_sock(connfd);
 			exit(0);

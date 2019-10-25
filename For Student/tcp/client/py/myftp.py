@@ -8,6 +8,12 @@ MODE_PORT = 2
 RECV_SIZE = 2048
 FILE_UNIT = 8192
 
+def getBytes(s):
+  return bytes(s, 'ascii')
+
+def getStr(b):
+  return str(b, 'gbk')
+
 class MyTFP:
   def __init__(self, url, port = 21):
     self.url = url
@@ -16,7 +22,15 @@ class MyTFP:
     self.fileList = []
     self.rtInfo = logging.Logger(__name__)
     self.transferMode = MODE_PASV
+    self.path = ''
+
+
+
+  def debugcheck(self):
+    self.rtInfo.info('checking')
   
+  def setAddr(self, url):
+    self.url = url
 
   def login(self, username = 'anonymous', password = 'k@no.com'):
     self.username = username
@@ -24,29 +38,33 @@ class MyTFP:
     self.connfd = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     
     # init connection
-    self.connfd.connect((self.url, self.port))
-    res = self.sock.recv(RECV_SIZE)
-    if not res.startswith('220'):
-      self.rtInfo.error(res[: -2])
+    try:
+      self.connfd.connect((socket.gethostbyname(self.url), self.port))
+    except Exception:
+      self.rtInfo.error('cannot connect to ' + socket.gethostbyname(self.url))
       return False
-    self.rtInfo.info(res[: -2])
+    res = self.connfd.recv(RECV_SIZE)
+    if not res.startswith(b'220'):
+      self.rtInfo.error(getStr(res[: -2]))
+      return False
+    self.rtInfo.info(getStr(res[: -2]))
     
     # 'USER' command
-    self.connfd.sendall('USER ' + self.username + '\r\n')
+    self.connfd.sendall(getBytes('USER ' + self.username + '\r\n'))
     res = self.connfd.recv(RECV_SIZE)
-    if not res.startswith('331'):
-      self.rtInfo.error(res[: -2])
+    if not res.startswith(b'331'):
+      self.rtInfo.error(getStr(res[: -2]))
       return False
-    self.rtInfo.info(res[: 2])
+    self.rtInfo.info(getStr(res[: -2]))
     
     # 'PASS' command
-    self.connfd.sendall('PASS' + self.password + '\r\n')
+    self.connfd.sendall(getBytes('PASS ' + self.password + '\r\n'))
     res = self.connfd.recv(RECV_SIZE)
-    if not res.startswith('230'):
-      self.rtInfo.error(res[: -2])
+    if not res.startswith(b'230'):
+      self.rtInfo.error(getStr(res[: -2]))
       return False
     self.logged = True
-    self.rtInfo.info(res[: -2])
+    self.rtInfo.info(getStr(res[: -2]))
     return True
   
 
@@ -54,43 +72,45 @@ class MyTFP:
     self.transferMode = mode
 
 
-  def establishDatafd(self):
+  def establishDatafd(self, command, param=''):
     datafd = None
     # estabilish datafd
-    if self.transferMode == MODE_PASV
-      self.connfd.sendall('PASV\r\n')
+    if self.transferMode == MODE_PASV:
+      self.connfd.sendall(getBytes('PASV\r\n'))
       res = self.connfd.recv(RECV_SIZE)
-      if not res.startswith('227'):
-        self.rtInfo.error(res[: -2])
+      if not res.startswith(b'227'):
+        self.rtInfo.error(getStr(res[: -2]))
         return None
-      self.rtInfo.info(res[: -2])
-      addr = res[27:-4].split(',')
-      pasvIp = '.'.join(res[:4])
-      pasvPort = int(res[4])*256 + int(res[5])
-      self.connfd.sendall('RETR ' + netName + '\r\n')
-      if not res.startswith('150'):
-        self.rtInfo.error(res[: -2])
-        return None
-      self.rtInfo.info(res[: -2])
+      self.rtInfo.info(getStr(res[: -2]))
+      addr = getStr(res[27:-4]).split(',')
+      pasvIp = '.'.join(addr[: -2])
+      pasvPort = int(addr[4])*256 + int(addr[5])
+      self.connfd.sendall(getBytes(command + ' ' + param + '\r\n'))
       datafd = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
       datafd.connect((pasvIp, pasvPort))
-    elif self.transferMode == MODE_PORT
+      res = self.connfd.recv(RECV_SIZE)
+      if not res.startswith(b'150'):
+        self.rtInfo.error(getStr(res[: -2]))
+        return None
+      self.rtInfo.info(getStr(res[: -2]))
+    elif self.transferMode == MODE_PORT:
       listenfd = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
       listenfd.setblocking = None
       listenPort = ['50', '5']
-      listenfd.bind(('127.0.0.1', listenPort[0] * 128 + listenPort[1]))
+      listenfd.bind(('127.0.0.1', listenPort[0] * 256 + listenPort[1]))
       listenfd.listen(1)
-      connfd.sendall('PORT 127,0,0,1,' + listenPort[0] + ',' + listenPort[1] + '\r\n')
+      myip = ','.join(self.connfd.getsockname()[0].slipt('.'))
+      connfd.sendall(getBytes('PORT ' + myip + ',' + listenPort[0] + ',' + listenPort[1] + '\r\n'))
       res = self.connfd.recv(RECV_SIZE)
-      if not res.startswith('227'):
-        self.rtInfo.error(res[: -2])
+      if not res.startswith(b'227'):
+        self.rtInfo.error(getStr(res[: -2]))
         return None
-      self.rtInfo.info(res[: -2])
-      self.connfd.sendall('RETR ' + netName + '\r\n')
-      if not res.startswith('150'):
-        self.rtInfo.error(res[: -2])
+      self.rtInfo.info(getStr(res[: -2]))
+      self.connfd.sendall(getBytes(command + ' ' + param + '\r\n'))
+      if not res.startswith(b'150'):
+        self.rtInfo.error(getStr(res[: -2]))
         return None
-      self.rtInfo.info(res[: -2])
+      self.rtInfo.info(getStr(res[: -2]))
       flag = False
       for retries in range(5):
         time.sleep(0.2)
@@ -100,7 +120,7 @@ class MyTFP:
           flag = True
           listenfd.close()
           break
-        except Exception, e:
+        except Exception:
           time.sleep(1)
           pass
       if not flag:
@@ -114,7 +134,7 @@ class MyTFP:
 
 
   def downloadFile(self, localName, netName):
-    datafd = self.establishDatafd()
+    datafd = self.establishDatafd('RETR', netName)
     if datafd is None:
       return False
     
@@ -128,15 +148,15 @@ class MyTFP:
     datafd.close()
     localFile.close()
     res = self.connfd.recv(RECV_SIZE)
-    if not '226' in res:
-      self.rtInfo.error([: -2])
+    if not res.startswith(b'226'):
+      self.rtInfo.error(getStr(res[: -2]))
       return False
-    self.rtInfo.info([: -2])
+    self.rtInfo.info(getStr(res[: -2]))
     return True
 
   
   def downloadList(self):
-    datafd = self.establishDatafd()
+    datafd = self.establishDatafd('LIST')
     if datafd is None:
       return False
     
@@ -146,19 +166,22 @@ class MyTFP:
       data = datafd.recv(FILE_UNIT)
       if not data:
         break
-      resList = resList + data
+      resList = resList + getStr(data)
     datafd.close()
     res = self.connfd.recv(RECV_SIZE)
-    if not '226' in res:
-      self.rtInfo.error([: -2])
+    if not res.startswith(b'226'):
+      self.rtInfo.error(getStr(res[: -2]))
       return False
-    self.rtInfo.info([: -2])
+    self.rtInfo.info(getStr(res[: -2]))
     self.fileList = []
     resList = resList.split('\r\n')
     for line in resList:
       if 'total' in line:
         continue
+      
       infoLine = re.findall(r'[\w|\-|>|/|\.|\:]+', line)
+      if infoLine.__len__() == 0:
+        continue
       infoItem = {}
       infoItem['permission'] = infoLine[0]
       infoItem['linkNum'] = infoLine[1]
@@ -171,16 +194,11 @@ class MyTFP:
         infoItem['dateTime'] = infoLine[7] + ' ' + infoLine[5] + ' ' + infoLine[6]
       infoItem['name'] = infoLine[8]
       self.fileList.append(infoItem)
-    res = self.connfd.recv(RECV_SIZE)
-    if not '226' in res:
-      self.rtInfo.error(res[: -2])
-      return False
-    self.rtInfo.info([: -2])
     return True
 
 
   def uploadFile(self, localName, netName):
-    datafd = self.establishDatafd()
+    datafd = self.establishDatafd('STOR', netName)
     if datafd is None:
       return False
     
@@ -191,52 +209,78 @@ class MyTFP:
     datafd.close()
     localFile.close()
     res = self.connfd.recv(RECV_SIZE)
-    if not '226' in res:
-      self.rtInfo.error([: -2])
+    if not res.startswith(b'226'):
+      self.rtInfo.error(getStr(res[: -2]))
       return False
-    self.rtInfo.info([: -2])
+    self.rtInfo.info(getStr(res[: -2]))
     return True
 
+  def sendMKD(self, dirname):
+    self.connfd.sendall(getBytes('MKD ' + dirname + '\r\n'))
+    res = self.connfd.recv(RECV_SIZE)
+    if not res.startswith(b'250'):
+      self.rtInfo.error(getStr(res[: -2]))
+      return False
+    self.rtInfo.info(getStr(res[: -2]))
+    return True
 
   def sendCWD(self, dirname):
-    self.connfd.sendall('CWD ' + dirname + '\r\n')
+    self.connfd.sendall(getBytes('CWD ' + dirname + '\r\n'))
     res = self.connfd.recv(RECV_SIZE)
-    if not '250' in res:
-      self.rtInfo.error([: -2])
+    if not res.startswith(b'250'):
+      self.rtInfo.error(getStr(res[: -2]))
       return False
-    self.rtInfo.info([: -2])
+    self.rtInfo.info(getStr(res[: -2]))
     return True
 
   def sendRMD(self, dirname):
-    self.connfd.sendall('RMD ' + dirname + '\r\n')
+    self.connfd.sendall(getBytes('RMD ' + dirname + '\r\n'))
     res = self.connfd.recv(RECV_SIZE)
-    if not '250' in res:
-      self.rtInfo.error([: -2])
+    if not res.startswith(b'250'):
+      self.rtInfo.error(getStr(res[: -2]))
       return False
-    self.rtInfo.info([: -2])
+    self.rtInfo.info(getStr(res[: -2]))
     return True
   
   def sendDELE(self, filename):
-    self.connfd.sendall('DELE ' + filename + '\r\n')
+    self.connfd.sendall(getBytes('DELE ' + filename + '\r\n'))
     res = self.connfd.recv(RECV_SIZE)
-    if not '250' in res:
-      self.rtInfo.error([: -2])
+    if not res.startswith(b'250'):
+      self.rtInfo.error(getStr(res[: -2]))
       return False
-    self.rtInfo.info([: -2])
+    self.rtInfo.info(getStr(res[: -2]))
+    return True
+
+  def sendPWD(self):
+    self.connfd.sendall(getBytes('PWD\r\n'))
+    res = self.connfd.recv(RECV_SIZE)
+    if not res.startswith(b'250'):
+      self.rtInfo.error(getStr(res[: -2]))
+      return False
+    self.rtInfo.info(getStr(res[: -2]))
+    self.path = getStr(res[5: -4])
     return True
 
   def rename(self, oldname, newname):
-    self.connfd.sendall('RNFR ' + oldname + '\r\n')
+    self.connfd.sendall(getBytes('RNFR ' + oldname + '\r\n'))
     res = self.connfd.recv(RECV_SIZE)
-    if not '350' in res:
-      self.rtInfo.error([: -2])
+    if not res.startswith(b'350'):
+      self.rtInfo.error(getStr(res[: -2]))
       return False
-    self.rtInfo.info([: -2])
+    self.rtInfo.info(getStr(res[: -2]))
+    self.connfd.sendall(getBytes('RNTO ' + newname + '\r\n'))
+    res = self.connfd.recv(RECV_SIZE)
+    if not res.startswith(b'250'):
+      self.rtInfo.error(getStr(res[: -2]))
+      return False
+    self.rtInfo.info(getStr(res[: -2]))
     return True
-    self.connfd.sendall('RNTO ' + newname + '\r\n')
+  
+  def quit(self):
+    self.connfd.sendall(getBytes('QUIT\r\n'))
     res = self.connfd.recv(RECV_SIZE)
-    if not '250' in res:
-      self.rtInfo.error([: -2])
+    if not res.startswith(b'221'):
+      self.rtInfo.error(getStr(res[: -2]))
       return False
-    self.rtInfo.info([: -2])
+    self.rtInfo.info(getStr(res[: -2]))
     return True
