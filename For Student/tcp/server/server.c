@@ -5,7 +5,7 @@ int portNum = 21;
 
 void error_out(char *err)
 {
-	//printf("%s", err);
+	///* deletelater */printf("%s", err);
 	exit(1);
 }
 
@@ -136,17 +136,17 @@ int init_socket_atport(int port)
 	int sock;
 	if((sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP)) == -1)
 	{
-		printf("Error socket(): %s(%d)\n", strerror(errno), errno);
+		///* deletelater */printf("Error socket(): %s(%d)\n", strerror(errno), errno);
 		return -1;
 	}
 	if(bind(sock, (struct sockaddr *)&addr, sizeof(addr)) == -1)
 	{
-		printf("Error bind(): %s(%d)\n", strerror(errno), errno);
+		///* deletelater */printf("Error bind(): %s(%d)\n", strerror(errno), errno);
 		return -1;
 	}
 	if (listen(sock, 10) == -1)
 	{
-		printf("Error listen(): %s(%d)\n", strerror(errno), errno);
+		///* deletelater */printf("Error listen(): %s(%d)\n", strerror(errno), errno);
 		return -1;
 	}
 	return sock;
@@ -162,18 +162,18 @@ int init_connection_at(int port, IpAddr ip)
 	sprintf(buffer, "%d.%d.%d.%d", ip.h1, ip.h2, ip.h3, ip.h4);
 	if(inet_pton(AF_INET, buffer, &addr.sin_addr) <= 0)
 	{
-		printf("Error inet_pton(): %s(%d)\n", strerror(errno), errno);
+		///* deletelater */printf("Error inet_pton(): %s(%d)\n", strerror(errno), errno);
 		return -1;
 	}
 	int sock;
 	if((sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP)) == -1)
 	{
-		printf("Error socket(): %s(%d)\n", strerror(errno), errno);
+		///* deletelater */printf("Error socket(): %s(%d)\n", strerror(errno), errno);
 		return -1;
 	}
 	if(connect(sock, (struct sockaddr *)&addr, sizeof(addr)) < 0)
 	{
-		printf("Error connect(): %s(%d)\n", strerror(errno), errno);
+		///* deletelater */printf("Error connect(): %s(%d)\n", strerror(errno), errno);
 		return -1;
 	}
 	return sock;
@@ -216,7 +216,7 @@ void communicate(int fd)
 	{
 		if(nread < 0 || nread > 4096)
 		{
-			printf("Error read() at communicate.\n");
+			///* deletelater */printf("Error read() at communicate.\n");
 			continue;
 		}
 		buffer[2047] = '\0';
@@ -228,7 +228,7 @@ void communicate(int fd)
 			continue;
 		}
 		stringfy_commandline(buffer);
-		printf("raw msg received: <%s>\n", buffer);
+		///* deletelater */printf("raw msg received: <%s>\n", buffer);
 		if(buffer[0] > 127 || buffer[0] <= 0)
 		{
 			ssn.msgToClient = "500 Invalid command.\n";
@@ -236,7 +236,7 @@ void communicate(int fd)
 			continue;
 		}
 		parse_command(buffer, &cmd);
-		printf("Message Received: CMD=<%s> ARG=<%s>\n", cmd.title, cmd.arg);
+		///* deletelater */printf("Message Received: CMD=<%s> ARG=<%s>\n", cmd.title, cmd.arg);
 		handle_command(&cmd, &ssn);
 		memset(&cmd, 0, sizeof(Command));
 		memset(buffer, 0, sizeof(buffer));
@@ -245,7 +245,7 @@ void communicate(int fd)
   {
     free(ssn.rnfrName);
   }
-	printf("Client disconnected\n");
+	///* deletelater */printf("Client disconnected\n");
 }
 
 int main(int argc, char **argv)
@@ -264,16 +264,16 @@ int main(int argc, char **argv)
 	}
 
 	getcwd(sentence, 2048);
-	printf("Server running ...\n");
-	printf("File root directory:\t%s\n", rootDirectory);
-	printf("Cuurent directory:\t%s\n", sentence);
-	printf("Listening port: \t%d\n", portNum);
+	///* deletelater */printf("Server running ...\n");
+	///* deletelater */printf("File root directory:\t%s\n", rootDirectory);
+	///* deletelater */printf("Cuurent directory:\t%s\n", sentence);
+	///* deletelater */printf("Listening port: \t%d\n", portNum);
 	while (1)
 	{
 		memset(sentence, 0, 8192);
 		if ((connfd = accept(listenfd, NULL, NULL)) == -1)
 		{
-			printf("Error accept(): %s(%d)\n", strerror(errno), errno);
+			///* deletelater */printf("Error accept(): %s(%d)\n", strerror(errno), errno);
 			continue;
 		}	
 
@@ -283,14 +283,14 @@ int main(int argc, char **argv)
 		{
 			char* res = "425 Cannot create Process for connection.\n";
 			write(connfd, res, strlen(res));
-			printf("Error fork(): cannot open new process.\n");
+			///* deletelater */printf("Error fork(): cannot open new process.\n");
 			continue;
 		}
 
 		if(pid == 0)
 		{
 			signal(SIGCHLD, server_wait);
-			printf("Connected\n");
+			///* deletelater */printf("Connected\n");
 			listenfd = sclose_sock(listenfd);
 			communicate(connfd);
 			connfd = sclose_sock(connfd);

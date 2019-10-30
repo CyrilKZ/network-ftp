@@ -9,10 +9,10 @@ RECV_SIZE = 2048
 FILE_UNIT = 8192
 
 def getBytes(s):
-  return bytes(s, 'ascii')
+  return bytes(s, 'utf8')
 
 def getStr(b):
-  return str(b, 'gbk')
+  return str(b, 'utf8')
 
 class MyTFP:
   def __init__(self, url, port = 21):
@@ -95,18 +95,19 @@ class MyTFP:
       self.rtInfo.info(getStr(res[: -2]))
     elif self.transferMode == MODE_PORT:
       listenfd = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-      listenfd.setblocking = None
-      listenPort = ['50', '5']
+      listenfd.setblocking(False)
+      listenPort = [50, 5]
       listenfd.bind(('127.0.0.1', listenPort[0] * 256 + listenPort[1]))
       listenfd.listen(1)
-      myip = ','.join(self.connfd.getsockname()[0].slipt('.'))
-      connfd.sendall(getBytes('PORT ' + myip + ',' + listenPort[0] + ',' + listenPort[1] + '\r\n'))
+      myip = ','.join(self.connfd.getsockname()[0].split('.'))
+      self.connfd.sendall(getBytes('PORT ' + myip + ',' + str(listenPort[0]) + ',' + str(listenPort[1]) + '\r\n'))
       res = self.connfd.recv(RECV_SIZE)
-      if not res.startswith(b'227'):
+      if not res.startswith(b'200'):
         self.rtInfo.error(getStr(res[: -2]))
         return None
       self.rtInfo.info(getStr(res[: -2]))
       self.connfd.sendall(getBytes(command + ' ' + param + '\r\n'))
+      res = self.connfd.recv(RECV_SIZE)
       if not res.startswith(b'150'):
         self.rtInfo.error(getStr(res[: -2]))
         return None
@@ -115,9 +116,9 @@ class MyTFP:
       for retries in range(5):
         time.sleep(0.2)
         try:
-          datafd = accept(listenfd)
-          datafd.setblocking(True)
+          datafd = listenfd.accept()[0]
           flag = True
+          datafd.setblocking(True)
           listenfd.close()
           break
         except Exception:
@@ -133,17 +134,32 @@ class MyTFP:
     return datafd
 
 
-  def downloadFile(self, localName, netName):
+  def downloadFile(self, localName, netName, offset, total):
+    self.connfd.sendall(getBytes('REST ' + str(offset) + '\r\n'))
+    res = self.connfd.recv(RECV_SIZE)
+    if not res.startswith(b'350'):
+      self.rtInfo.error(getStr(res[: -2]))
+      return False
+    self.rtInfo.info(getStr(res[: -2]))
+
     datafd = self.establishDatafd('RETR', netName)
     if datafd is None:
       return False
     
+    
+    self.rtInfo.info('starting: '+ str(total - offset) + ' bytes to download')
+    totalstr = str(total)
     # transfer file
-    localFile = open(localName, 'wb')
+    fileMode = 'wb'
+    if offset > 0:
+      fileMode = 'ab'
+    localFile = open(localName, fileMode)
     while True:
       data = datafd.recv(FILE_UNIT)
       if not data:
         break
+      offset += data.__len__()
+      self.rtInfo.info('downloading: ' + str(offset) +  '/' + totalstr + ' bytes received')
       localFile.write(data)
     datafd.close()
     localFile.close()
@@ -197,15 +213,24 @@ class MyTFP:
     return True
 
 
-  def uploadFile(self, localName, netName):
+  def uploadFile(self, localName, netName, total):
     datafd = self.establishDatafd('STOR', netName)
     if datafd is None:
       return False
     
+    offset = 0
+    
+    total = str(total)
+    self.rtInfo.info('starting: ' + total + ' bytes to upload')
     # transfer file
     localFile = open(localName, 'rb')
-    data = localFile.read(FILE_UNIT)
-    datafd.sendall(data)
+    while True:
+      data = localFile.read(FILE_UNIT)
+      if not data:
+        break
+      datafd.sendall(data)
+      offset += data.__len__()
+      self.rtInfo.info('uploading: ' + str(offset) + '/' + total + ' bytes received')
     datafd.close()
     localFile.close()
     res = self.connfd.recv(RECV_SIZE)

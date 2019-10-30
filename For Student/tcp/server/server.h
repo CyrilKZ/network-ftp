@@ -25,7 +25,7 @@
 #define PASSWORD_OK 2
 #define PAGE_SIZE 8192
 
-int reportLine(char *str);
+//int reportLine(char *str);
 void error_out(char *str);
 
 

@@ -225,7 +225,7 @@ void cmd_port(Command* cmd, Session* ssn)
   ssn->rcvAddr = addr;
   ssn->rcvPort = port;
   ssn->rcvMode = INPORT;
-  ssn->msgToClient = "220 PORT command successful.\n";
+  ssn->msgToClient = "200 PORT command successful.\n";
   message_client(ssn);
 }
 
@@ -257,12 +257,14 @@ void cmd_retr(Command* cmd, Session* ssn)
   if(strlen(cmd->arg) >= 1024)
   {
     ssn->msgToClient = "551 Filename too long.\n";
+    ssn->rcvMode = NOMODE;
     message_client(ssn);
     return;
   }
   if(test_dir(cmd->arg) == -1)
   {
     ssn->msgToClient = "551 Invalid filename.\n";
+    ssn->rcvMode = NOMODE;
     message_client(ssn);
     return;
   }
@@ -272,6 +274,7 @@ void cmd_retr(Command* cmd, Session* ssn)
     char msg[2048] = "551 Cannot open file <";
     strcat(msg, buffer);
     strcat(msg, ">.\n");
+    ssn->rcvMode = NOMODE;
     ssn->msgToClient = msg;
     message_client(ssn);
     return;
@@ -284,6 +287,7 @@ void cmd_retr(Command* cmd, Session* ssn)
   if(lseek(fd, offset, SEEK_SET) == -1)
   {
     ssn->msgToClient = "551 Cannot open file at given offset.\n";
+    ssn->rcvMode = NOMODE;
     message_client(ssn);
     return;
   }
@@ -304,13 +308,31 @@ void cmd_retr(Command* cmd, Session* ssn)
   }
   int status = 0;
   message_client(ssn);
-  while(remain)
+
+  struct timeval timeout;
+  timeout.tv_sec = 1;
+  timeout.tv_usec = 0;
+  setsockopt(ssn->datafd, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof(timeout));
+
+  while(1)
   {
-    int singleTimeTotal = remain > PAGE_SIZE ? PAGE_SIZE : remain;
-    int n = sendfile(ssn->datafd, fd, NULL, singleTimeTotal);
+    memset(buffer, 0, 2048);
+    int n = read(fd, buffer, sizeof(buffer));
     if(n == -1)
+    { 
+      if(errno == EINTR)
+      {
+        continue;
+      }
+      else
+      {
+        status = 1;
+        break;
+      }  
+    }
+    if(n == 0)
     {
-      status = 1;
+      status = 0;
       break;
     }
     if(ssn->aborFlag)
@@ -318,11 +340,11 @@ void cmd_retr(Command* cmd, Session* ssn)
       status = 2;
       break;
     }
-    remain -= n;
-  }
-  if(remain == 0)
-  {
-    status = 0;
+    if(write(ssn->datafd, buffer, n) < 0)
+    {
+      status = 1;
+      break;
+    }
   }
   ssn->datafd = sclose_sock(ssn->datafd);
   close(fd);
@@ -353,12 +375,14 @@ void cmd_stor(Command* cmd, Session* ssn)
   if(strlen(cmd->arg) >= 1024)
   {
     ssn->msgToClient = "551 Filename too long.\n";
+    ssn->rcvMode = NOMODE;
     message_client(ssn);
     return;
   }
   if(test_dir(cmd->arg) == -1)
   {
     ssn->msgToClient = "551 Invalid filename.\n";
+    ssn->rcvMode = NOMODE;
     message_client(ssn);
     return;
   }
@@ -366,6 +390,7 @@ void cmd_stor(Command* cmd, Session* ssn)
   if(fd == -1)
   {
     ssn->msgToClient = "551 Cannot open file.\n";
+    ssn->rcvMode = NOMODE;
     message_client(ssn);
     return;
   }
@@ -373,6 +398,7 @@ void cmd_stor(Command* cmd, Session* ssn)
   if (lseek(fd, 0, SEEK_SET) < 0)
   {
     ssn->msgToClient = "551 Cannot open file.\n";
+    ssn->rcvMode = NOMODE;
     message_client(ssn);
     return;
   }
@@ -384,6 +410,7 @@ void cmd_stor(Command* cmd, Session* ssn)
   if(lseek(fd, offset, SEEK_SET) == -1)
   {
     ssn->msgToClient = "551 Cannot open file.\n";
+    ssn->rcvMode = NOMODE;
     message_client(ssn);
     return;
   }
@@ -642,7 +669,7 @@ void cmd_rnto(Command* cmd, Session* ssn)
 
 void cmd_rest(Command* cmd, Session* ssn)
 {
-  ssn->currentPos = atoi(cmd->arg);
+  ssn->currentPos = atol(cmd->arg);
   char msg[1024] = {0};
   sprintf(msg, "350 Restart position accepted (%ld)", (long)ssn->currentPos);
   ssn->msgToClient = msg;
@@ -667,7 +694,7 @@ void cmd_quit(Session* ssn)
   {
     free(ssn->rnfrName);
   }
-  printf("Client disconnected\n");
+  ///* deletelater */printf("Client disconnected\n");
   exit(0);
 }
 
@@ -742,15 +769,15 @@ int fakelsl(int datafd, char* name)
     {
       return -1;
     }
-    printf("Send list line: %c%s\t%5ld\t%4d\t%4d\t%3ld\t%s\t%s\r\n", 
-    (entry->d_type == DT_DIR)?'d':'-', 
-    pmsBuffer, 
-    statBuffer.st_nlink, 
-    statBuffer.st_uid, 
-    statBuffer.st_gid, 
-    statBuffer.st_size,
-    timeBuffer,
-    entry->d_name);
+    // ///* deletelater */printf("Send list line: %c%s\t%5ld\t%4d\t%4d\t%3ld\t%s\t%s\r\n", 
+    // (entry->d_type == DT_DIR)?'d':'-', 
+    // pmsBuffer, 
+    // statBuffer.st_nlink, 
+    // statBuffer.st_uid, 
+    // statBuffer.st_gid, 
+    // statBuffer.st_size,
+    // timeBuffer,
+    // entry->d_name);
   }
   return 0;
 }

@@ -1,26 +1,28 @@
 import sys
 import time
 import os
-import threading
 from logging import Logger, Handler, getLogger, Formatter
 from PyQt5 import QtGui, QtCore, QtWidgets
 from myftp import MyTFP
-
-lock = threading.Lock()
 
 def appender(widget, obj):
   widget.append(obj)
 
 class loggerInfo(Handler, QtCore.QObject): 
   signal = QtCore.pyqtSignal(str)
-  def __init__(self, widget):
+  progress = QtCore.pyqtSignal(str)
+  def __init__(self, widget1, widget2):
     Handler.__init__(self)
     QtCore.QObject.__init__(self)
-    self.signal.connect(widget.append, type=QtCore.Qt.QueuedConnection)
- 
+    self.signal.connect(widget1.append, type=QtCore.Qt.QueuedConnection)
+    self.progress.connect(widget2.setText, type=QtCore.Qt.QueuedConnection)
+
   def emit(self, msg):
     text = self.format(msg)
-    self.signal.emit(text)
+    if 'downloading:' in text or 'uploading' in text:
+      self.progress.emit(text)
+    else:
+      self.signal.emit(text)
 
 class WorkerThread(QtCore.QThread):
   interface_signal_toLogin = QtCore.pyqtSignal()
@@ -29,8 +31,8 @@ class WorkerThread(QtCore.QThread):
   interface_signal_info = QtCore.pyqtSignal(str)
   interface_signal_refresh = QtCore.pyqtSignal()
   interface_signal_update = QtCore.pyqtSignal()
-  def __init__(self, ouput):
-    self.loggerinfo = loggerInfo(ouput)
+  def __init__(self, ouput1, ouput2):
+    self.loggerinfo = loggerInfo(ouput1, ouput2)
     QtCore.QThread.__init__(self)
     self.lock = QtCore.QMutex()
     self.params = {
@@ -39,7 +41,9 @@ class WorkerThread(QtCore.QThread):
       'password': '',
       'netname': '',
       'localname': '',
-      'tranfermode': 0,
+      'tranfermode': 1,
+      'offset': 0,
+      'total': 0
     }
     self.tasks = {
       'login': self.login,
@@ -95,6 +99,7 @@ class WorkerThread(QtCore.QThread):
       return False, 'Waring: working, please wait'
     res, info = False, 'Error: cannot refresh list'       
     try:
+      self.ftp.changeMode(self.params['tranfermode'])
       res = self.ftp.downloadList() and self.ftp.sendPWD() 
     except Exception:
       pass
@@ -199,10 +204,11 @@ class WorkerThread(QtCore.QThread):
     if not self.lock.tryLock(): 
       return False, 'Waring: working, please wait'
     res, info = False, 'Error: cannot upload file'
-    try:
-      res = self.ftp.uploadFile(self.params['localname'], self.params['netname'])
-    except Exception:
-      pass
+    # try:
+    self.ftp.changeMode(self.params['tranfermode'])
+    res = self.ftp.uploadFile(self.params['localname'], self.params['netname'], self.params['total'])
+    # except Exception:
+    #   pass
     self.lock.unlock()
     if not res:
       return res, info
@@ -214,10 +220,11 @@ class WorkerThread(QtCore.QThread):
     if not self.lock.tryLock(): 
       return False, 'Waring: working, please wait'
     res, info = False, 'Error: cannot download file'
-    try:
-      res = self.ftp.downloadFile(self.params['localname'], self.params['netname'])
-    except Exception:
-      pass
+    # try:
+    self.ftp.changeMode(self.params['tranfermode'])
+    res = self.ftp.downloadFile(self.params['localname'], self.params['netname'], self.params['offset'], self.params['total'])
+    # except Exception:
+    #   pass
     self.lock.unlock()
     if not res:
       return res, info
@@ -290,11 +297,21 @@ class MyInterface(QtWidgets.QWidget):
     self.makedirButton = QtWidgets.QPushButton('add dir', self)
     self.makedirButton.clicked.connect(self.makeDir)
 
+    self.patchButton = QtWidgets.QPushButton('patch...', self)
+    self.patchButton.clicked.connect(self.patch)
+
     self.reportLabel = QtWidgets.QLabel('', self)
     self.report = QtWidgets.QTextBrowser(self)
     self.report.setFixedHeight(80)
 
-    self.worker = WorkerThread(self.report)
+    self.progressBar = QtWidgets.QLineEdit(self)
+    self.progressBar.setReadOnly(True)
+
+    self.modeLabel = QtWidgets.QLabel('', self)
+    self.modeButton = QtWidgets.QPushButton('change mode', self)
+    self.modeButton.clicked.connect(self.changeMode)
+
+    self.worker = WorkerThread(self.report, self.progressBar)
     self.worker.interface_signal_error.connect(self.errorAlert, type=QtCore.Qt.QueuedConnection)
     self.worker.interface_signal_info.connect(self.infoAlert, type=QtCore.Qt.QueuedConnection)
     self.worker.interface_signal_toLogin.connect(self.toLogin, type=QtCore.Qt.QueuedConnection)
@@ -315,7 +332,8 @@ class MyInterface(QtWidgets.QWidget):
     self.grid.addWidget(self.pathText, 4, 1, 1, 7)
     self.grid.addWidget(self.mainTableLabel, 5, 0, 1, 8)
     self.grid.addWidget(self.mainTable, 6, 0, 1, 8)
-    self.grid.addWidget(self.downloadButton, 7, 0, 1, 4)
+    self.grid.addWidget(self.downloadButton, 7, 0, 1, 2)
+    self.grid.addWidget(self.patchButton, 7, 2, 1, 2)
     self.grid.addWidget(self.updateButton, 7, 4, 1, 2)
     self.grid.addWidget(self.deleButton, 7, 6, 1, 2)
     self.grid.addWidget(self.paramLabel, 8, 0, 1, 2)
@@ -323,9 +341,12 @@ class MyInterface(QtWidgets.QWidget):
     self.grid.addWidget(self.uploadButton, 9, 0, 1, 4)
     self.grid.addWidget(self.renameButton, 9, 4, 1, 2)
     self.grid.addWidget(self.makedirButton, 9, 6, 1, 2)
-    self.grid.addWidget(self.logoutButton, 10, 0, 1, 8)
-    self.grid.addWidget(self.reportLabel, 11, 0, 1, 8)
-    self.grid.addWidget(self.report, 12, 0, 1, 8)
+    self.grid.addWidget(self.modeLabel, 10, 0, 1, 2)
+    self.grid.addWidget(self.modeButton, 10, 2, 1, 6)
+    self.grid.addWidget(self.logoutButton, 11, 0, 1, 8)
+    self.grid.addWidget(self.reportLabel, 12, 0, 1, 8)
+    self.grid.addWidget(self.progressBar, 13, 0, 1, 8)
+    self.grid.addWidget(self.report, 14, 0, 1, 8)
     self.setLayout(self.grid)
     
     self.toLogin()
@@ -348,9 +369,14 @@ class MyInterface(QtWidgets.QWidget):
     self.worker.start()
 
   def refresh(self):
+    self.progressBar.setText('')
     self.paramText.setText('')
     self.pathText.setText(self.worker.ftp.path)
     self.mainTable.clear()
+    if self.worker.params['tranfermode'] == 1:
+      self.modeLabel.setText('current mode: PASV')
+    else: 
+      self.modeLabel.setText('current mode: PORT')
     root = QtWidgets.QTreeWidgetItem()
     root.setText(0, '..')
     self.mainTable.addTopLevelItem(root)
@@ -403,6 +429,25 @@ class MyInterface(QtWidgets.QWidget):
     self.worker.start()
     return
 
+  def patch(self):
+    fname = QtWidgets.QFileDialog.getOpenFileName()
+    item = self.mainTable.currentItem()
+    if fname[0] == '':
+      return
+    elif (not item) or item.text(0) == '':
+      self.errorAlert('please select file')
+      return
+    offset = os.path.getsize(fname[0])
+    if offset >= int(item.text(1)):
+      self.errorAlert('file already fully downloaded')
+      return
+    flag = self.worker.setParams({'netname': item.text(0), 'localname': fname[0], 'offset': offset, 'total': int(item.text(1))})
+    if not flag:
+      return
+    self.worker.setTask('downloadFile')
+    self.worker.start()
+    return
+
   def download(self):
     fname = QtWidgets.QFileDialog.getSaveFileName()
     item = self.mainTable.currentItem()
@@ -411,7 +456,7 @@ class MyInterface(QtWidgets.QWidget):
     elif (not item) or item.text(0) == '':
       self.errorAlert('please select file')
       return
-    flag = self.worker.setParams({'netname': item.text(0), 'localname': fname[0]})
+    flag = self.worker.setParams({'netname': item.text(0), 'localname': fname[0], 'offset': 0, 'total': int(item.text(1))})
     if not flag:
       return
     self.worker.setTask('downloadFile')
@@ -422,10 +467,10 @@ class MyInterface(QtWidgets.QWidget):
     fname = QtWidgets.QFileDialog.getOpenFileName()
     if fname[0] == '':
       return
-    elif self.paramText.text() == '':
-      self.errorAlert('please set file name on sever')
-      return
-    flag = self.worker.setParams({'netname': self.paramText.text(), 'localname': fname[0]})
+    netName = self.paramText.text()
+    if netName == '':
+      netName = fname[0].split('/')[-1]
+    flag = self.worker.setParams({'netname': netName, 'localname': fname[0], 'total': os.path.getsize(fname[0])})
     if not flag:
       return
     self.worker.setTask('uploadFile')
@@ -452,6 +497,13 @@ class MyInterface(QtWidgets.QWidget):
     self.worker.setTask('changeDir')
     self.worker.start()
   
+  def changeMode(self):
+    if self.worker.params['tranfermode'] == 1:
+      self.worker.setParams({'tranfermode': 2})
+    else:
+      self.worker.setParams({'tranfermode': 1})
+    self.refresh()
+
   def errorAlert(self, s):
     QtWidgets.QMessageBox.critical(self, 'ERROR', s)
   def infoAlert(self, s):
@@ -480,6 +532,10 @@ class MyInterface(QtWidgets.QWidget):
     self.paramLabel.show()
     self.updateButton.show()
     self.makedirButton.show()
+    self.modeButton.show()
+    self.modeLabel.show()
+    self.patchButton.show()
+    self.progressBar.show()
 
     self.setGeometry(0, 0, 720, 480)
 
@@ -510,6 +566,10 @@ class MyInterface(QtWidgets.QWidget):
     self.paramLabel.hide()
     self.updateButton.hide()
     self.makedirButton.hide()
+    self.modeButton.hide()
+    self.modeLabel.hide()
+    self.patchButton.hide()
+    self.progressBar.hide()
 
     self.setGeometry(0, 0, 720, 240)
 
@@ -519,4 +579,5 @@ class MyMainWindow(QtWidgets.QMainWindow):
     self.mainBody = MyInterface()
     self.setCentralWidget(self.mainBody)
     self.setGeometry(100, 100, 720, 480)
+    self.setWindowTitle('FTP Client by tht17')
     self.show()

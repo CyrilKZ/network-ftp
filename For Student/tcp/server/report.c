@@ -1,7 +1,7 @@
 #include "server.h"
-int reportLine(char* msg){
-  printf("%s", msg);
-}
+// int reportLine(char* msg){
+//   printf("%s", msg);
+// }
 
 void message_client(Session* ssn)
 {
@@ -20,5 +20,5 @@ void message_client(Session* ssn)
   }
   len = strlen(buffer);
   int n = write(ssn->connection, buffer, len);
-  printf("Write to client MSG=<%s>, N=<%d>\n",buffer, n);
+  ///* deletelater */printf("Write to client MSG=<%s>, N=<%d>\n",buffer, n);
 }
